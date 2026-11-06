@@ -11,6 +11,12 @@ internal static class GcData
     private static readonly Regex NamePattern = new(@"^GC[1-9][0-9]*$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
+    internal static bool IsRegistered(Entity e)
+    {
+        using var data = e.GetXDataForApplication(AppName);
+        return data != null;
+    }
+
     private static (string Name, string Description)? ReadEntry(Entity source)
     {
         using var data = source.GetXDataForApplication(AppName);
@@ -119,7 +125,7 @@ internal static class GcData
             using var tr = doc.Database.TransactionManager.StartTransaction();
             if (tr.GetObject(sourceId, OpenMode.ForRead, false) is not Entity source || !LengthData.IsSource(source))
             {
-                message = "Chỉ hỗ trợ LINE, PLINE, MLINE hoặc DIM tuyến tính.";
+                message = "Chỉ hỗ trợ LINE, PLINE, ARC, SPLINE, ELLIPSE, MLINE hoặc DIM tuyến tính.";
                 return false;
             }
             var apps = (RegAppTable)tr.GetObject(doc.Database.RegAppTableId, OpenMode.ForRead);

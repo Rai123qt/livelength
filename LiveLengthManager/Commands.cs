@@ -501,14 +501,17 @@ public sealed class Commands
     {
         var doc = AcadApp.DocumentManager.MdiActiveDocument;
         if (doc == null) return;
-        var options = new PromptEntityOptions("\nChon DIM / LINE / PLINE / MLINE can dat ma GC: ");
-        options.SetRejectMessage("\nChi ho tro DIM tuyen tinh, LINE, PLINE, MLINE.");
+        var options = new PromptEntityOptions("\nChon DIM / LINE / PLINE / ARC / SPLINE / ELLIPSE / MLINE can dat ma GC: ");
+        options.SetRejectMessage("\nChi ho tro DIM tuyen tinh, LINE, PLINE, ARC, SPLINE, ELLIPSE, MLINE.");
         options.AddAllowedClass(typeof(AlignedDimension), true);
         options.AddAllowedClass(typeof(RotatedDimension), true);
         options.AddAllowedClass(typeof(Line), true);
         options.AddAllowedClass(typeof(Polyline), true);
         options.AddAllowedClass(typeof(Polyline2d), true);
         options.AddAllowedClass(typeof(Polyline3d), true);
+        options.AddAllowedClass(typeof(Arc), true);
+        options.AddAllowedClass(typeof(Spline), true);
+        options.AddAllowedClass(typeof(Ellipse), true);
         options.AddAllowedClass(typeof(Mline), true);
         var pick = doc.Editor.GetEntity(options);
         if (pick.Status != PromptStatus.OK) return;
@@ -571,7 +574,7 @@ public sealed class Commands
         var rows = GcData.GetRows(doc);
         if (rows.Count == 0)
         {
-            doc.Editor.WriteMessage("\nChua co GC nao. Hay dung LLMGCADD de dang ky DIM / LINE / PLINE / MLINE truoc.");
+            doc.Editor.WriteMessage("\nChua co GC nao. Hay dung LLMGCADD de dang ky DIM / LINE / PLINE / ARC / SPLINE / ELLIPSE / MLINE truoc.");
             return;
         }
         var chosen = PendingGcDocName == doc.Name
@@ -656,7 +659,7 @@ public sealed class Commands
         }
         if (source.IsNull)
         {
-            doc.Editor.WriteMessage("\nKhong tim thay mot LINE / PLINE / MLINE / DIM ro rang tai dau mui ten. Hay bat OSNAP vao duong.");
+            doc.Editor.WriteMessage("\nKhong tim thay mot LINE / PLINE / ARC / SPLINE / ELLIPSE / MLINE / DIM ro rang tai dau mui ten. Hay bat OSNAP vao duong.");
             return;
         }
         Link(doc, note, source);
@@ -816,12 +819,15 @@ public sealed class Commands
 
     private static ObjectId PickSource(Editor ed)
     {
-        var opts = new PromptEntityOptions("\nChon LINE / PLINE / MLINE / DIM lam nguon chieu dai: ");
-        opts.SetRejectMessage("\nChi ho tro LINE, PLINE 2D/3D, MLINE, DIM tuyen tinh.");
+        var opts = new PromptEntityOptions("\nChon LINE / PLINE / ARC / SPLINE / ELLIPSE / MLINE / DIM lam nguon chieu dai: ");
+        opts.SetRejectMessage("\nChi ho tro LINE, PLINE 2D/3D, ARC, SPLINE, ELLIPSE, MLINE, DIM tuyen tinh.");
         opts.AddAllowedClass(typeof(Line), true);
         opts.AddAllowedClass(typeof(Polyline), true);
         opts.AddAllowedClass(typeof(Polyline2d), true);
         opts.AddAllowedClass(typeof(Polyline3d), true);
+        opts.AddAllowedClass(typeof(Arc), true);
+        opts.AddAllowedClass(typeof(Spline), true);
+        opts.AddAllowedClass(typeof(Ellipse), true);
         opts.AddAllowedClass(typeof(Mline), true);
         opts.AddAllowedClass(typeof(AlignedDimension), true);
         opts.AddAllowedClass(typeof(RotatedDimension), true);

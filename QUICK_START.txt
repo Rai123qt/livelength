@@ -12,5 +12,5 @@ TU BO CAI ZIP PHAT HANH
 3. Mo AutoCAD 2027, go LLMGR.
 
 Trong bang LLMGR, tab Chieu dai tao va quan ly MLeader co L=.
-Tab Giat cap GC dang ky DIM/LINE/PLINE/MLINE va tao ghi chu GC.
+Tab Giat cap GC dang ky DIM/LINE/PLINE/ARC/SPLINE/ELLIPSE/MLINE va tao ghi chu GC.
 Ghi chu co L= duoc cap nhat khi nguon thay doi tren may da cai plugin.

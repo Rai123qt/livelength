@@ -56,6 +56,7 @@ internal static class LiveEngine
         FullSync.Clear();
         Changed.Clear();
         Dependents.Clear();
+        ArrowFollow.Clear();
     }
 
     private static void Attach(Document doc)
@@ -88,6 +89,7 @@ internal static class LiveEngine
             FullSync.Remove(db);
             Changed.Remove(db);
             Dependents.Remove(db);
+            ArrowFollow.Forget(db);
         }
         HistoryCommands.Remove(doc);
         SelectionDirty.Remove(doc);
@@ -183,6 +185,12 @@ internal static class LiveEngine
         if (id.IsNull) return;
         if (!Changed.TryGetValue(db, out var ids)) Changed[db] = ids = new HashSet<ObjectId>();
         ids.Add(id);
+        // Huge edits (e.g. pasting thousands of objects) are cheaper as one full scan.
+        if (ids.Count > 20000)
+        {
+            Changed.Remove(db);
+            FullSync.Add(db);
+        }
     }
     private static void InvalidateIndex(Database db)
     {
@@ -256,7 +264,11 @@ internal static class LiveEngine
     private static void Idle(object? sender, EventArgs e)
     {
         var now = DateTime.UtcNow;
-        if (!_started || now < _nextIdle || _syncing || !IsIdle()) return;
+        if (!_started || now < _nextIdle || _syncing) return;
+        // Idle fires constantly; skip the CMDNAMES query when there is nothing to do.
+        if (Dirty.Count == 0 && _closedDocumentName == null &&
+            (SelectionDirty.Count == 0 || !PaletteHost.IsVisible)) return;
+        if (!IsIdle()) return;
         _nextIdle = now.AddMilliseconds(160);
         Document? doc;
         try { doc = AcadApp.DocumentManager.MdiActiveDocument; }
@@ -273,14 +285,16 @@ internal static class LiveEngine
         if (!DocumentDatabases.TryGetValue(doc, out var db)) return;
         _closedDocumentName = null;
         var changed = Dirty.Remove(db);
+        var refreshPalette = changed;
         if (changed && _enabled && !RedoProtected.Contains(db))
         {
             try
             {
                 using (doc.LockDocument())
                 {
-                    RefreshArrowSources(doc, db);
-                    SynchronizePending(doc, db);
+                    var arrows = RefreshArrowSources(doc, db);
+                    // Edits to unrelated geometry no longer rescan the palette.
+                    refreshPalette = SynchronizePending(doc, db) | arrows;
                 }
             }
             catch (System.Exception)
@@ -293,7 +307,7 @@ internal static class LiveEngine
         }
         // UI refresh is deliberately throttled; editing the DataGridView is never done
         // in ObjectModified/ObjectErased event callbacks.
-        if (PaletteHost.IsVisible && changed)
+        if (PaletteHost.IsVisible && refreshPalette)
         {
             try
             {
@@ -308,7 +322,9 @@ internal static class LiveEngine
         }
     }
 
-    internal static int Synchronize(Document doc)
+    internal static int Synchronize(Document doc) => Synchronize(doc, null);
+
+    private static int Synchronize(Document doc, HashSet<string>? changedHandles)
     {
         if (_syncing) return 0;
         var db = doc.Database;
@@ -320,7 +336,7 @@ internal static class LiveEngine
             using var tr = db.TransactionManager.StartOpenCloseTransaction();
             foreach (var id in EnumerateNotes(db, tr))
             {
-                try { count += SyncNote(tr, db, id, index); }
+                try { count += SyncNote(tr, db, id, index, changedHandles); }
                 catch (System.Exception) { /* malformed one note must not stop others */ }
             }
             tr.Commit();
@@ -336,15 +352,20 @@ internal static class LiveEngine
     }
 
     // Updates only notes that were edited or depend on an edited source.
-    private static void SynchronizePending(Document doc, Database db)
+    // Returns true when the palette has something new to show.
+    private static bool SynchronizePending(Document doc, Database db)
     {
+        Changed.Remove(db, out var ids);
+        var handles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (ids != null) foreach (var id in ids) handles.Add(id.Handle.ToString());
         if (FullSync.Contains(db) || !Dependents.TryGetValue(db, out var index))
         {
-            Synchronize(doc);
-            return;
+            Synchronize(doc, handles);
+            return true;
         }
-        if (_syncing || !Changed.Remove(db, out var ids) || ids.Count == 0) return;
+        if (_syncing || ids == null || ids.Count == 0) return false;
         _syncing = true;
+        var relevant = false;
         try
         {
             using var tr = db.TransactionManager.StartOpenCloseTransaction();
@@ -352,20 +373,31 @@ internal static class LiveEngine
             foreach (var id in ids)
             {
                 // Handle is readable without opening, so erased sources still map to notes.
-                if (index.TryGetValue(id.Handle.ToString(), out var notes)) targets.UnionWith(notes);
-                if (id.IsErased) continue;
-                try { if (tr.GetObject(id, OpenMode.ForRead, false) is Entity e && LengthData.IsNote(e)) targets.Add(id); }
+                if (index.TryGetValue(id.Handle.ToString(), out var notes))
+                {
+                    targets.UnionWith(notes);
+                    relevant = true;
+                }
+                try
+                {
+                    if (tr.GetObject(id, OpenMode.ForRead, true) is not Entity e) continue;
+                    if (GcData.IsRegistered(e)) relevant = true;
+                    if (!LengthData.IsNote(e) || !LengthData.HasAppData(e)) continue;
+                    relevant = true;
+                    if (!id.IsErased) targets.Add(id);
+                }
                 catch (System.Exception) { }
             }
             foreach (var id in targets)
             {
                 if (id.IsNull || id.IsErased) continue;
-                try { SyncNote(tr, db, id, index); }
+                try { SyncNote(tr, db, id, index, handles); }
                 catch (System.Exception) { /* malformed one note must not stop others */ }
             }
             tr.Commit();
         }
         finally { _syncing = false; }
+        return relevant;
     }
 
     private static void AddDependent(Dictionary<string, HashSet<ObjectId>> index, string handle, ObjectId note)
@@ -375,7 +407,8 @@ internal static class LiveEngine
         notes.Add(note);
     }
 
-    private static int SyncNote(Transaction tr, Database db, ObjectId id, Dictionary<string, HashSet<ObjectId>>? index)
+    private static int SyncNote(Transaction tr, Database db, ObjectId id,
+        Dictionary<string, HashSet<ObjectId>>? index, HashSet<string>? changedHandles)
     {
         if (tr.GetObject(id, OpenMode.ForRead, false) is not Entity note) return 0;
         var link = LengthData.ReadLink(note);
@@ -416,13 +449,20 @@ internal static class LiveEngine
         // the LINE/DIM deletion; the palette still shows missing source.
         if (!length.HasValue ||
             (link.SecondarySourceHandle.Length > 0 && !secondLength.HasValue)) return 0;
+        var arrowMoved = false;
+        if (note is MLeader arrowNote)
+        {
+            var sourceId = LengthData.Resolve(db, link.SourceHandle);
+            var source = sourceId.IsNull || sourceId.IsErased ? null : tr.GetObject(sourceId, OpenMode.ForRead, false) as Entity;
+            arrowMoved = ArrowFollow.Update(db, arrowNote, source, changedHandles?.Contains(link.SourceHandle) == true);
+        }
         var wanted = LengthData.Render(link, length, secondLength);
         bool fixHeight = false;
         if (note is MLeader leader &&
             tr.GetObject(leader.MLeaderStyle, OpenMode.ForRead) is MLeaderStyle style &&
             (style.Name == "LLM-TNR" || style.Name == "LLM-VNROMANS"))
             fixHeight = Math.Abs(leader.TextHeight - 2.0) > 0.001;
-        if (current == wanted && !fixHeight && !duplicateLength && !unitsChanged && !gcTemplateChanged) return 0;
+        if (current == wanted && !fixHeight && !duplicateLength && !unitsChanged && !gcTemplateChanged) return arrowMoved ? 1 : 0;
         // The note could also have been manually edited since the previous
         // update. Reconstruct its template from CURRENT text to preserve it.
         var reconstructed = LengthData.NormalizeSlots(
@@ -431,12 +471,12 @@ internal static class LiveEngine
         bool templateChanged = reconstructed != link.Template && reconstructed.Length <= 3000;
         if (templateChanged) link.Template = reconstructed;
         wanted = LengthData.Render(link, length, secondLength);
-        if (current == wanted && !templateChanged && !fixHeight && !unitsChanged && !gcTemplateChanged) return 0;
-        note.UpgradeOpen();
+        if (current == wanted && !templateChanged && !fixHeight && !unitsChanged && !gcTemplateChanged) return arrowMoved ? 1 : 0;
+        if (!note.IsWriteEnabled) note.UpgradeOpen();
         if (templateChanged || unitsChanged || gcTemplateChanged) LengthData.WriteLink(note, link);
         var textChanged = current != wanted && LengthData.WriteText(note, wanted);
         if (fixHeight) ((MLeader)note).TextHeight = 2.0;
-        return textChanged || fixHeight ? 1 : 0;
+        return textChanged || fixHeight || arrowMoved ? 1 : 0;
     }
 
     internal static List<ObjectId> EnumerateNotes(Database db, Transaction tr)
@@ -622,7 +662,7 @@ internal static class LiveEngine
                 LengthData.ReadLink(note) is not { IsGc: false } link)
             { message = "Hãy chọn ghi chú chiều dài đã liên kết."; return false; }
             if (tr.GetObject(sourceId, OpenMode.ForRead, false) is not Entity source || !LengthData.IsSource(source))
-            { message = "Nguồn thứ hai phải là LINE, PLINE, MLINE hoặc DIM tuyến tính."; return false; }
+            { message = "Nguồn thứ hai phải là LINE, PLINE, ARC, SPLINE, ELLIPSE, MLINE hoặc DIM tuyến tính."; return false; }
             var current = LengthData.ReadText(note) ?? "";
             link.Template = LengthData.TemplateFor(current, note is DBText, link.Millimeters);
             if (link.Template.Split(LengthData.Token, StringSplitOptions.None).Length < 3 &&
@@ -660,7 +700,7 @@ internal static class LiveEngine
             if (tr.GetObject(noteId, OpenMode.ForRead, false) is not Entity note || !LengthData.IsNote(note))
             { result = "Chỉ hỗ trợ TEXT, MTEXT, MLEADER (nội dung MTEXT)."; return false; }
             if (tr.GetObject(sourceId, OpenMode.ForRead, false) is not Entity source || !LengthData.IsSource(source))
-            { result = "Chỉ hỗ trợ LINE, PLINE 2D/3D, MLINE hoặc DIM tuyến tính."; return false; }
+            { result = "Chỉ hỗ trợ LINE, PLINE 2D/3D, ARC, SPLINE, ELLIPSE, MLINE hoặc DIM tuyến tính."; return false; }
             var current = LengthData.ReadText(note);
             if (current == null) { result = "Không đọc được nội dung ghi chú."; return false; }
             var old = LengthData.ReadLink(note);
@@ -839,9 +879,9 @@ internal static class LiveEngine
             Math.Min(SegmentDistance(tip, dim.XLine1Point, first), SegmentDistance(tip, dim.XLine2Point, second)));
     }
 
-    private static void RefreshArrowSources(Document doc, Database db)
+    private static bool RefreshArrowSources(Document doc, Database db)
     {
-        if (!ArrowDirty.Remove(db, out var modified)) return;
+        if (!ArrowDirty.Remove(db, out var modified)) return false;
         foreach (var noteId in modified)
         {
             try
@@ -872,6 +912,7 @@ internal static class LiveEngine
             }
             catch (System.Exception) { }
         }
+        return modified.Count > 0;
     }
 
     private static void ClearSource(Document doc, ObjectId noteId)

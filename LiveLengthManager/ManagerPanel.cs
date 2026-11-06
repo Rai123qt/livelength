@@ -431,7 +431,7 @@ internal sealed class ManagerPanel : UserControl
             FlatStyle = FlatStyle.Flat };
         registerGc.FlatAppearance.BorderColor = Color.FromArgb(202, 213, 226);
         registerGc.Click += (_, _) => AcadApp.DocumentManager.MdiActiveDocument?.SendStringToExecute("LLMGCADD\n", true, false, false);
-        _tips.SetToolTip(registerGc, "Chọn DIM, LINE, PLINE hoặc MLINE; đặt mã và mô tả vị trí.");
+        _tips.SetToolTip(registerGc, "Chọn DIM, LINE, PLINE, ARC, SPLINE, ELLIPSE hoặc MLINE; đặt mã và mô tả vị trí.");
         gcActions.Controls.Add(registerGc, 0, 1);
         _gcLocateButton.Text = "Dò vị trí nguồn";
         _gcLocateButton.Dock = DockStyle.Fill;
@@ -528,10 +528,11 @@ internal sealed class ManagerPanel : UserControl
     private void BuildSettings(Panel page, Control host)
     {
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18),
-            ColumnCount = 1, RowCount = 4 };
+            ColumnCount = 1, RowCount = 5 };
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.Controls.Add(new Label { Text = "Giao diện palette", Dock = DockStyle.Fill,
             Font = new Font("Segoe UI Semibold", 12f, FontStyle.Bold) }, 0, 0);
@@ -553,10 +554,15 @@ internal sealed class ManagerPanel : UserControl
             catch { }
         };
         layout.Controls.Add(_themeSelector, 0, 2);
+        var followArrow = new CheckBox { Text = "Mũi tên MLeader bám theo nguồn khi nguồn đổi kích thước / di chuyển",
+            Dock = DockStyle.Fill, Checked = ArrowFollow.Enabled };
+        followArrow.CheckedChanged += (_, _) => ArrowFollow.Enabled = followArrow.Checked;
+        _tips.SetToolTip(followArrow, "Khi LINE/PLINE/ARC... bị kéo ngắn, kéo dài hoặc di chuyển, đầu mũi tên được đặt lại lên nguồn ở cùng vị trí tương đối.");
+        layout.Controls.Add(followArrow, 0, 3);
         layout.Controls.Add(new Label { Text = "Đơn vị mm/m được chọn riêng ở từng dòng ghi chú. " +
             "mm hiển thị số nguyên; m hiển thị tối đa 2 chữ số thập phân. " +
             "Nhấp vào ô Nội dung để sửa trực tiếp. Enter: lưu; Shift+Enter: xuống dòng.",
-            Dock = DockStyle.Fill, AutoSize = false }, 0, 3);
+            Dock = DockStyle.Fill, AutoSize = false }, 0, 4);
         page.Controls.Add(layout);
     }
 
@@ -1058,7 +1064,7 @@ internal sealed class ManagerPanel : UserControl
     {
         if (CurrentGc is not { } selected)
         {
-            MessageBox.Show("Hãy đăng ký DIM/LINE/PLINE/MLINE và chọn mã GC trong danh sách.", "LiveLength");
+            MessageBox.Show("Hãy đăng ký DIM/LINE/PLINE/ARC/SPLINE/ELLIPSE/MLINE và chọn mã GC trong danh sách.", "LiveLength");
             return;
         }
         var doc = AcadApp.DocumentManager.MdiActiveDocument;
