@@ -24,6 +24,8 @@ if errorlevel 1 goto :fail
 rem Pre-3.11 bundles loaded Contents\LiveLengthManager.dll directly; the loader replaces it.
 if exist "%DEST%\Contents\LiveLengthManager.dll" del /F /Q "%DEST%\Contents\LiveLengthManager.dll"
 if exist "%DEST%\Contents\LiveLengthManager.deps.json" del /F /Q "%DEST%\Contents\LiveLengthManager.deps.json"
+if exist "%APPDATA%\LiveLengthManager2027\versions\bad.txt" del /F /Q "%APPDATA%\LiveLengthManager2027\versions\bad.txt"
+if exist "%APPDATA%\LiveLengthManager2027\versions\loading.txt" del /F /Q "%APPDATA%\LiveLengthManager2027\versions\loading.txt"
 echo Installed AutoCAD 2027 bundle: "%DEST%"
 echo Restart AutoCAD 2027 and run LLMGR.
 echo The 2026 bundle (LiveLengthManager.bundle) remains untouched.

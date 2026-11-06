@@ -262,7 +262,17 @@ internal static class LiveEngine
         catch { return false; }
     }
 
+    // An exception escaping an AutoCAD event handler terminates AutoCAD, so nothing may leak out.
     private static void Idle(object? sender, EventArgs e)
+    {
+        try { IdleCore(); }
+        catch (System.Exception ex)
+        {
+            try { System.Diagnostics.Trace.WriteLine("LiveLength idle: " + ex); } catch { }
+        }
+    }
+
+    private static void IdleCore()
     {
         var now = DateTime.UtcNow;
         if (!_started || now < _nextIdle || _syncing) return;
@@ -271,8 +281,12 @@ internal static class LiveEngine
             // First idle: AutoCAD's status bar exists and startup work is done.
             _booted = true;
             try { PaletteHost.EnsureTray(); } catch (System.Exception) { }
-            Updater.CleanupOldVersions();
-            Updater.CheckInBackground(false);
+            try
+            {
+                Updater.CleanupOldVersions();
+                Updater.CheckInBackground(false);
+            }
+            catch (System.Exception) { }
         }
         // Idle fires constantly; skip the CMDNAMES query when there is nothing to do.
         if (Dirty.Count == 0 && _closedDocumentName == null &&

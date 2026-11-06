@@ -32,6 +32,12 @@ try {
         $installedHash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
         if ($sourceHash -ne $installedHash) { throw "Verification failed: $relative" }
     }
+    # A manual install always gets a fresh start from the loader's crash bookkeeping.
+    $versions = Join-Path $env:APPDATA 'LiveLengthManager2027\versions'
+    foreach ($marker in @('bad.txt', 'loading.txt')) {
+        $path = Join-Path $versions $marker
+        if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
+    }
     Write-Host "AutoCAD found: $acadPath"
     Write-Host "Plugin installed: $destination"
     Write-Host 'Open AutoCAD 2027 and enter LLMGR. Later versions update from inside the palette.'

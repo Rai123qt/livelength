@@ -16,11 +16,12 @@ internal static class Updater
 {
     private const string Repository = "Rai123qt/livelength";
     private const string DllAsset = "LiveLengthManager.dll";
-    private static readonly HttpClient Http = CreateClient();
-    private static int _checking;
-
+    // Must stay above Http: static initializers run in textual order and CreateClient reads it.
     internal static Version CurrentVersion { get; } =
         typeof(Updater).Assembly.GetName().Version ?? new Version(0, 0, 0);
+    private static readonly Lazy<HttpClient> LazyHttp = new(CreateClient);
+    private static HttpClient Http => LazyHttp.Value;
+    private static int _checking;
     internal static string CurrentText => $"{CurrentVersion.Major}.{CurrentVersion.Minor}.{CurrentVersion.Build}";
 
     // Without the loader, a downloaded build would never be picked up.
@@ -89,6 +90,8 @@ internal static class Updater
     private static async Task CheckAsync()
     {
         using var response = await Http.GetAsync($"https://api.github.com/repos/{Repository}/releases/latest");
+        // 404: the repository has no published release yet.
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) { Set(UpdateState.None); return; }
         if (!response.IsSuccessStatusCode) throw new InvalidOperationException("GitHub: " + (int)response.StatusCode);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = json.RootElement;
