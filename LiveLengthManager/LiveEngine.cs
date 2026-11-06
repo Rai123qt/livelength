@@ -21,6 +21,7 @@ internal static class LiveEngine
     private static readonly Dictionary<Database, HashSet<ObjectId>> Changed = new();
     private static readonly Dictionary<Database, Dictionary<string, HashSet<ObjectId>>> Dependents = new();
     private static bool _started;
+    private static bool _booted;
     private static bool _syncing;
     private static bool _enabled = true;
     private static DateTime _nextIdle = DateTime.MinValue;
@@ -261,10 +262,32 @@ internal static class LiveEngine
         catch { return false; }
     }
 
+    // An exception escaping an AutoCAD event handler terminates AutoCAD, so nothing may leak out.
     private static void Idle(object? sender, EventArgs e)
+    {
+        try { IdleCore(); }
+        catch (System.Exception ex)
+        {
+            try { System.Diagnostics.Trace.WriteLine("LiveLength idle: " + ex); } catch { }
+        }
+    }
+
+    private static void IdleCore()
     {
         var now = DateTime.UtcNow;
         if (!_started || now < _nextIdle || _syncing) return;
+        if (!_booted)
+        {
+            // First idle: AutoCAD's status bar exists and startup work is done.
+            _booted = true;
+            try { PaletteHost.EnsureTray(); } catch (System.Exception) { }
+            try
+            {
+                Updater.CleanupOldVersions();
+                Updater.CheckInBackground(false);
+            }
+            catch (System.Exception) { }
+        }
         // Idle fires constantly; skip the CMDNAMES query when there is nothing to do.
         if (Dirty.Count == 0 && _closedDocumentName == null &&
             (SelectionDirty.Count == 0 || !PaletteHost.IsVisible)) return;
@@ -550,13 +573,55 @@ internal static class LiveEngine
         return rows;
     }
 
+    private static readonly System.Text.RegularExpressions.Regex InlineFont =
+        new(@"\\[fF]([^|;\\]+)", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>True when the note uses the VNROMANS style, whose SHX font expects TCVN3 text.</summary>
+    internal static bool IsTcvn3(Transaction tr, Entity e)
+    {
+        try
+        {
+            if (e is MLeader ml && tr.GetObject(ml.MLeaderStyle, OpenMode.ForRead) is MLeaderStyle s)
+                return s.Name.Contains("VNROMANS", StringComparison.OrdinalIgnoreCase);
+            var name = e switch { MText m => m.TextStyleName, DBText t => t.TextStyleName, _ => "" };
+            return name.Contains("VNROMANS", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (System.Exception) { return false; }
+    }
+
+    private static string StyleLabel(Transaction tr, Entity e, string text)
+    {
+        var name = "";
+        try
+        {
+            name = e switch
+            {
+                MLeader ml when tr.GetObject(ml.MLeaderStyle, OpenMode.ForRead) is MLeaderStyle s => s.Name switch
+                {
+                    "LLM-TNR" => "TNR",
+                    "LLM-VNROMANS" => "VNROMANS",
+                    var other => other
+                },
+                MText m => m.TextStyleName,
+                DBText t => t.TextStyleName,
+                _ => ""
+            };
+        }
+        catch (System.Exception) { }
+        // An inline \f override decides the visible font regardless of the style.
+        var font = InlineFont.Match(text);
+        return font.Success ? $"{name} ({font.Groups[1].Value.Trim()})" : name;
+    }
+
     private static NoteRow? BuildRow(Transaction tr, Database db, Entity e, string layoutName)
     {
         if (!LengthData.IsNote(e)) return null;
         var link = LengthData.ReadLink(e);
         var plain = link == null && LengthData.IsPlainNote(e);
         if (link == null && !plain) return null;
+        var tcvn3 = IsTcvn3(tr, e);
         var txt = LengthData.ReadText(e) ?? "";
+        if (tcvn3) txt = LiveLengthManager.Tcvn3.ToUnicode(txt);
         var pos = LengthData.GetPosition(e, out bool posOk);
         var row = new NoteRow
         {
@@ -566,6 +631,8 @@ internal static class LiveEngine
             Description = LengthData.Preview(txt),
             Layer = e.Layer,
             Layout = layoutName,
+            Style = StyleLabel(tr, e, txt),
+            Tcvn3 = tcvn3,
             Position = pos,
             HasPosition = posOk,
             Link = link,

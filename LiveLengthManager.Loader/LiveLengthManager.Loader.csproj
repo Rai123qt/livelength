@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Small, rarely-changing entry point. AutoCAD locks this DLL while running; the real
+       plugin lives in versioned folders so updates never need to overwrite a locked file. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>LiveLengthManager.Loader</AssemblyName>
+    <Version>1.0.0</Version>
+    <AcadDir Condition="'$(AcadDir)' == ''">C:\Program Files\Autodesk\AutoCAD 2027</AcadDir>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(AcadDir)\AcMgd.dll')">
+    <Reference Include="AcMgd"><HintPath>$(AcadDir)\AcMgd.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="AcDbMgd"><HintPath>$(AcadDir)\AcDbMgd.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="AcCoreMgd"><HintPath>$(AcadDir)\AcCoreMgd.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup Condition="!Exists('$(AcadDir)\AcMgd.dll')">
+    <PackageReference Include="AutoCAD.NET" Version="26.0.0" ExcludeAssets="runtime" />
+  </ItemGroup>
+</Project>

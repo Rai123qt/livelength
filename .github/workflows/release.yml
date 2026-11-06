@@ -1,0 +1,50 @@
+# Push a tag such as v3.11.0 to build and publish a GitHub Release. The in-app updater reads
+# the latest release and downloads its LiveLengthManager.dll (verified with the .sha256 file).
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Check tag matches project version
+        run: |
+          version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' LiveLengthManager/LiveLengthManager.csproj)
+          bundle=$(grep -o 'Version="[0-9.]*"' LiveLengthManager2027.bundle/PackageContents.xml | head -1 | cut -d'"' -f2)
+          echo "csproj=$version bundle=$bundle tag=$GITHUB_REF_NAME"
+          test "v$version" = "$GITHUB_REF_NAME"
+          test "$bundle" = "$version"
+      - name: Build (AutoCAD 2027 .NET API from NuGet)
+        run: |
+          dotnet build LiveLengthManager/LiveLengthManager.csproj -c Release -o out/app
+          dotnet build LiveLengthManager.Loader/LiveLengthManager.Loader.csproj -c Release -o out/loader
+      - name: Package
+        run: |
+          name="LiveLengthManager2027_${GITHUB_REF_NAME}"
+          pkg="dist/$name"
+          mkdir -p "$pkg/LiveLengthManager2027.bundle/Contents/app"
+          cp LiveLengthManager2027.bundle/PackageContents.xml "$pkg/LiveLengthManager2027.bundle/"
+          cp out/loader/LiveLengthManager.Loader.dll "$pkg/LiveLengthManager2027.bundle/Contents/"
+          cp out/app/LiveLengthManager.dll "$pkg/LiveLengthManager2027.bundle/Contents/app/"
+          cp INSTALL_PORTABLE.cmd INSTALL_PORTABLE.ps1 FIND_AUTOCAD_2027.ps1 QUICK_START.txt UNINSTALL_AUTOSTART.cmd "$pkg/"
+          (cd dist && zip -qr "$name.zip" "$name")
+          cp out/app/LiveLengthManager.dll dist/
+          sha256sum dist/LiveLengthManager.dll | cut -d' ' -f1 > dist/LiveLengthManager.dll.sha256
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/LiveLengthManager2027_${GITHUB_REF_NAME}.zip" \
+            dist/LiveLengthManager.dll dist/LiveLengthManager.dll.sha256 \
+            --title "LiveLength Manager 2027 $GITHUB_REF_NAME" --generate-notes

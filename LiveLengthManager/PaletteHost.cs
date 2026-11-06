@@ -9,6 +9,7 @@ internal static class PaletteHost
 {
     private static PaletteSet? _palette;
     private static ManagerPanel? _panel;
+    private static TrayItem? _tray;
     internal static bool IsVisible => _palette?.Visible == true;
 
     internal static void Show()
@@ -16,7 +17,8 @@ internal static class PaletteHost
         if (_palette == null)
         {
             _panel = new ManagerPanel();
-            _palette = new PaletteSet("LiveLength Manager 2027", new Guid("366D5A54-CDA7-40CC-9149-E2710EE64021"))
+            _palette = new PaletteSet("LiveLength Manager 2027 · v" + Updater.CurrentText,
+                new Guid("366D5A54-CDA7-40CC-9149-E2710EE64021"))
             {
                 Style = PaletteSetStyles.ShowAutoHideButton |
                         PaletteSetStyles.ShowCloseButton |
@@ -39,6 +41,48 @@ internal static class PaletteHost
             }
             catch (System.Exception) { }
         }
+    }
+
+    internal static void Toggle()
+    {
+        if (IsVisible) _palette!.Visible = false;
+        else Show();
+    }
+
+    // Status-bar icon: hides/shows the palette. Live L= updates keep running while hidden.
+    internal static void EnsureTray()
+    {
+        if (_tray != null) return;
+        var item = new TrayItem
+        {
+            ToolTipText = $"LiveLength Manager v{Updater.CurrentText} — bấm để hiện/ẩn bảng (L= vẫn tự cập nhật khi ẩn)",
+            Icon = CreateIcon(),
+            Visible = true
+        };
+        item.MouseDown += (_, _) =>
+        {
+            try { Toggle(); } catch (System.Exception) { }
+        };
+        AcadApp.StatusBar.TrayItems.Add(item);
+        AcadApp.StatusBar.Update();
+        _tray = item;
+    }
+
+    private static Icon CreateIcon()
+    {
+        using var bitmap = new Bitmap(16, 16);
+        using (var g = Graphics.FromImage(bitmap))
+        {
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+            using var back = new SolidBrush(Color.FromArgb(35, 99, 150));
+            g.FillRectangle(back, 1, 1, 14, 14);
+            using var font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
+            using var white = new SolidBrush(Color.White);
+            g.DrawString("L", font, white, new RectangleF(0, 0, 16, 16),
+                new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center });
+        }
+        return Icon.FromHandle(bitmap.GetHicon());
     }
 
     internal static void Refresh(Document doc)

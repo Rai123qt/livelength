@@ -273,10 +273,47 @@ internal static class LengthData
         }
     }
 
+    // Strips MText inline formatting ({\fArial|b0;...}, \H, \C, \S...) so only visible text remains.
+    internal static string PlainText(string source, string paragraph = " | ")
+    {
+        var sb = new StringBuilder(source.Length);
+        for (int i = 0; i < source.Length; i++)
+        {
+            var c = source[i];
+            if (c is '{' or '}') continue;
+            if (c != '\\' || i + 1 >= source.Length) { sb.Append(c); continue; }
+            var code = source[++i];
+            switch (code)
+            {
+                case '\\' or '{' or '}': sb.Append(code); break;
+                case 'P': sb.Append(paragraph); break;
+                case 'N': sb.Append(' '); break;
+                case '~': sb.Append(' '); break;
+                case 'U' when i + 5 < source.Length && source[i + 1] == '+' &&
+                              int.TryParse(source.AsSpan(i + 2, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var cp):
+                    sb.Append((char)cp);
+                    i += 5;
+                    break;
+                case 'S':
+                    // Stacked text: \S1/2; or \S1^2;
+                    var end = source.IndexOf(';', i + 1);
+                    if (end < 0) end = source.Length;
+                    sb.Append(source[(i + 1)..end].Replace('^', '/').Replace('#', '/'));
+                    i = end;
+                    break;
+                case 'f' or 'F' or 'H' or 'h' or 'C' or 'c' or 'T' or 'Q' or 'W' or 'A' or 'p':
+                    var stop = source.IndexOf(';', i + 1);
+                    i = stop < 0 ? source.Length : stop;
+                    break;
+                default: break; // \L \l \O \o \K \k and unknown toggles have no text.
+            }
+        }
+        return sb.ToString();
+    }
+
     internal static string Preview(string source)
     {
-        var value = source.Replace("\\P", " | ", StringComparison.OrdinalIgnoreCase)
-            .Replace("\r", " ").Replace("\n", " ").Trim();
+        var value = PlainText(source).Replace("\r", " ").Replace("\n", " ").Trim();
         return value.Length > 135 ? value[..132] + "..." : value;
     }
 }
