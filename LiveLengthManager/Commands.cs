@@ -65,8 +65,8 @@ public sealed class Commands
     {
         var doc = AcadApp.DocumentManager.MdiActiveDocument;
         if (doc == null) return;
-        var options = new PromptEntityOptions("\nChon MText de sao chep noi dung sang MLeader: ");
-        options.SetRejectMessage("\nHay chon MText.");
+        var options = new PromptEntityOptions("\nChọn MText để sao chép nội dung sang MLeader: ");
+        options.SetRejectMessage("\nHãy chọn MText.");
         options.AddAllowedClass(typeof(MText), true);
         var picked = doc.Editor.GetEntity(options);
         if (picked.Status != PromptStatus.OK) return;
@@ -93,20 +93,20 @@ public sealed class Commands
         }
         catch (System.Exception ex)
         {
-            doc.Editor.WriteMessage("\nKhong doc duoc MText: " + ex.Message);
+            doc.Editor.WriteMessage("\nKhông đọc được MText: " + ex.Message);
             return;
         }
         if (string.IsNullOrWhiteSpace(content))
         {
-            doc.Editor.WriteMessage("\nMText khong co noi dung.");
+            doc.Editor.WriteMessage("\nMText không có nội dung.");
             return;
         }
         var created = CreatePlacedMLeader(doc, leaderStyleId, textStyleId, layer,
-            textHeight, textWidth, textColor, content, "\nChon diem mui ten MLeader: ");
+            textHeight, textWidth, textColor, content, "\nChọn điểm mũi tên MLeader: ");
         if (created.IsNull) return;
         if (LengthData.HasLengthField(content)) LinkAtArrow(doc, created, promptIfMissing: true);
         else MarkPlainNote(doc, created);
-        doc.Editor.WriteMessage("\nDa tao MLeader tu noi dung MText. MText goc van duoc giu lai.");
+        doc.Editor.WriteMessage("\nĐã tạo MLeader từ nội dung MText. MText gốc vẫn được giữ lại.");
         try { PaletteHost.Refresh(doc); } catch (System.Exception) { }
     }
 
@@ -135,7 +135,7 @@ public sealed class Commands
     {
         var doc = AcadApp.DocumentManager.MdiActiveDocument;
         if (doc == null) return;
-        var options = new PromptKeywordOptions("\nChon kieu chu [TNR/VNROMANS] <TNR>: ") { AllowNone = true };
+        var options = new PromptKeywordOptions("\nChọn kiểu chữ [TNR/VNROMANS] <TNR>: ") { AllowNone = true };
         options.Keywords.Add("TNR");
         options.Keywords.Add("VNROMANS");
         options.Keywords.Default = "TNR";
@@ -159,16 +159,16 @@ public sealed class Commands
             foreach (ObjectId id in space) existing.Add(id);
             tr.Commit();
         }
-        catch (System.Exception ex) { doc.Editor.WriteMessage("\nKhong tao duoc style: " + ex.Message); return; }
+        catch (System.Exception ex) { doc.Editor.WriteMessage("\nKhông tạo được style: " + ex.Message); return; }
         try
         {
             db.MLeaderstyle = chosenStyle;
             doc.Editor.WriteMessage(linkLength
-                ? "\nVe MLeader va nhap noi dung ngay trong AutoCAD. Co the go L = o bat ky dong nao."
-                : "\nVe MLeader va nhap ghi chu thuong. Khong tu them L.");
+                ? "\nVẽ MLeader và nhập nội dung ngay trong AutoCAD. Có thể gõ L = ở bất kỳ dòng nào."
+                : "\nVẽ MLeader và nhập ghi chú thường. Không tự thêm L.");
             doc.Editor.Command("_.MLEADER");
         }
-        catch (System.Exception ex) { doc.Editor.WriteMessage("\nLenh MLEADER khong hoan tat: " + ex.Message); }
+        catch (System.Exception ex) { doc.Editor.WriteMessage("\nLệnh MLEADER không hoàn tất: " + ex.Message); }
         finally { try { db.MLeaderstyle = previousStyle; } catch (System.Exception) { } }
         ObjectId created = ObjectId.Null;
         using (var tr = db.TransactionManager.StartTransaction())
@@ -312,7 +312,7 @@ public sealed class Commands
             if (tr.GetObject(originalId, OpenMode.ForRead, false) is not MLeader original ||
                 LengthData.ReadLink(original) is not { } link)
             {
-                doc.Editor.WriteMessage("\nHay chon MLeader da lien ket boi LiveLength.");
+                doc.Editor.WriteMessage("\nHãy chọn MLeader đã liên kết bởi LiveLength.");
                 return;
             }
             millimeters = link.Millimeters;
@@ -331,14 +331,14 @@ public sealed class Commands
         var oldTitle = separator >= 0 ? template[..separator] : template;
         if (oldTitle.TrimStart().StartsWith("Line ", StringComparison.OrdinalIgnoreCase))
         {
-            var titleOptions = new PromptStringOptions("\nTen line moi (Enter de giu nguyen): ") { AllowSpaces = true };
+            var titleOptions = new PromptStringOptions("\nTên line mới (Enter để giữ nguyên): ") { AllowSpaces = true };
             var title = doc.Editor.GetString(titleOptions);
             if (title.Status == PromptStatus.Cancel || title.Status == PromptStatus.Error) return;
             if (title.Status == PromptStatus.OK && !string.IsNullOrWhiteSpace(title.StringResult))
                 template = title.StringResult + (separator >= 0 ? template[separator..] : "");
         }
         var created = CreatePlacedMLeader(doc, styleId, textStyleId, layer,
-            textHeight, textWidth, textColor, template, "\nChon diem mui ten tren duong: ");
+            textHeight, textWidth, textColor, template, "\nChọn điểm mũi tên trên đường: ");
         if (created.IsNull) return;
         LinkAtArrow(doc, created);
         if (millimeters)
@@ -411,7 +411,7 @@ public sealed class Commands
         }
         catch (System.Exception ex)
         {
-            doc.Editor.WriteMessage("\nKhong tao duoc MLeader: " + ex.Message);
+            doc.Editor.WriteMessage("\nKhông tạo được MLeader: " + ex.Message);
             return ObjectId.Null;
         }
         return created;
@@ -453,7 +453,7 @@ public sealed class Commands
 
         protected override SamplerStatus Sampler(JigPrompts prompts)
         {
-            var options = new JigPromptPointOptions("\nChon vi tri ghi chu: ")
+            var options = new JigPromptPointOptions("\nChọn vị trí ghi chú: ")
             {
                 BasePoint = _arrow,
                 UseBasePoint = true,
@@ -501,8 +501,8 @@ public sealed class Commands
     {
         var doc = AcadApp.DocumentManager.MdiActiveDocument;
         if (doc == null) return;
-        var options = new PromptEntityOptions("\nChon DIM / LINE / PLINE / ARC / SPLINE / ELLIPSE / MLINE can dat ma GC: ");
-        options.SetRejectMessage("\nChi ho tro DIM tuyen tinh, LINE, PLINE, ARC, SPLINE, ELLIPSE, MLINE.");
+        var options = new PromptEntityOptions("\nChọn DIM / LINE / PLINE / ARC / SPLINE / ELLIPSE / MLINE cần đặt mã GC: ");
+        options.SetRejectMessage("\nChỉ hỗ trợ DIM tuyến tính, LINE, PLINE, ARC, SPLINE, ELLIPSE, MLINE.");
         options.AddAllowedClass(typeof(AlignedDimension), true);
         options.AddAllowedClass(typeof(RotatedDimension), true);
         options.AddAllowedClass(typeof(Line), true);
@@ -516,11 +516,11 @@ public sealed class Commands
         var pick = doc.Editor.GetEntity(options);
         if (pick.Status != PromptStatus.OK) return;
         var suggested = GcData.NextName(GcData.GetRows(doc));
-        var name = doc.Editor.GetString(new PromptStringOptions($"\nNhap ma GC <{suggested}>: "));
+        var name = doc.Editor.GetString(new PromptStringOptions($"\nNhập mã GC <{suggested}>: "));
         if (name.Status == PromptStatus.Cancel || name.Status == PromptStatus.Error) return;
         var code = name.Status == PromptStatus.OK && !string.IsNullOrWhiteSpace(name.StringResult)
             ? name.StringResult : suggested;
-        var description = doc.Editor.GetString(new PromptStringOptions("\nMo ta vi tri (co the de trong, vi du: Vi tri xuong den): ")
+        var description = doc.Editor.GetString(new PromptStringOptions("\nMô tả vị trí (có thể để trống, ví dụ: Vị trí xuống đèn): ")
         {
             AllowSpaces = true
         });
@@ -533,7 +533,7 @@ public sealed class Commands
             var handle = source.Handle.ToString();
             tr.Commit();
             try { LiveEngine.UpdateGcNotes(doc, handle, code.Trim().ToUpperInvariant(), descriptionText); }
-            catch (System.Exception ex) { doc.Editor.WriteMessage("\nKhong cap nhat duoc ghi chu GC cu: " + ex.Message); }
+            catch (System.Exception ex) { doc.Editor.WriteMessage("\nKhông cập nhật được ghi chú GC cũ: " + ex.Message); }
         }
         doc.Editor.WriteMessage("\n" + message);
         try { PaletteHost.Refresh(doc); } catch (System.Exception) { }
@@ -551,7 +551,7 @@ public sealed class Commands
         if (GcData.Update(doc, sourceId, edit.OldName, edit.NewName, edit.Description, out var message))
         {
             try { LiveEngine.UpdateGcNotes(doc, edit.Handle, edit.NewName.Trim().ToUpperInvariant(), edit.Description); }
-            catch (System.Exception ex) { doc.Editor.WriteMessage("\nKhong cap nhat duoc ghi chu GC cu: " + ex.Message); }
+            catch (System.Exception ex) { doc.Editor.WriteMessage("\nKhông cập nhật được ghi chú GC cũ: " + ex.Message); }
         }
         doc.Editor.WriteMessage("\n" + message);
         try { PaletteHost.Refresh(doc); } catch (System.Exception) { }
@@ -574,7 +574,7 @@ public sealed class Commands
         var rows = GcData.GetRows(doc);
         if (rows.Count == 0)
         {
-            doc.Editor.WriteMessage("\nChua co GC nao. Hay dung LLMGCADD de dang ky DIM / LINE / PLINE / ARC / SPLINE / ELLIPSE / MLINE truoc.");
+            doc.Editor.WriteMessage("\nChưa có GC nào. Hãy dùng LLMGCADD để đăng ký DIM / LINE / PLINE / ARC / SPLINE / ELLIPSE / MLINE trước.");
             return;
         }
         var chosen = PendingGcDocName == doc.Name
@@ -582,7 +582,7 @@ public sealed class Commands
         if (chosen == null)
         {
             for (int i = 0; i < rows.Count; i++) doc.Editor.WriteMessage($"\n{i + 1}. {rows[i]}");
-            var pick = doc.Editor.GetInteger(new PromptIntegerOptions("\nChon so GC: ")
+            var pick = doc.Editor.GetInteger(new PromptIntegerOptions("\nChọn số GC: ")
             {
                 LowerLimit = 1, UpperLimit = rows.Count
             });
@@ -592,7 +592,7 @@ public sealed class Commands
         var sourceId = LengthData.Resolve(doc.Database, chosen.Handle);
         if (sourceId.IsNull || sourceId.IsErased)
         {
-            doc.Editor.WriteMessage("\nNguon cua ma GC nay khong con trong ban ve.");
+            doc.Editor.WriteMessage("\nNguồn của mã GC này không còn trong bản vẽ.");
             return;
         }
         ObjectId styleId;
@@ -608,20 +608,20 @@ public sealed class Commands
         }
         catch (System.Exception ex)
         {
-            doc.Editor.WriteMessage("\nKhong tao duoc style GC: " + ex.Message);
+            doc.Editor.WriteMessage("\nKhông tạo được style GC: " + ex.Message);
             return;
         }
         var green = Autodesk.AutoCAD.Colors.Color.FromColorIndex(Autodesk.AutoCAD.Colors.ColorMethod.ByAci, 3);
         var template = GcData.BuildTemplate(chosen.Name, chosen.Description);
         var noteId = CreatePlacedMLeader(doc, styleId, textStyleId, layer, 2.0, 0,
-            green, template, "\nChon diem mui ten GC (khong can cham DIM): ");
+            green, template, "\nChọn điểm mũi tên GC (không cần chạm DIM): ");
         if (noteId.IsNull) return;
         if (LiveEngine.Bind(doc, noteId, sourceId, out var result, chosen.Name))
         {
-            doc.Editor.WriteMessage("\n" + chosen.Name + " da lien ket voi nguon da dang ky; mui ten co the chi vao vi tri bat ky.");
+            doc.Editor.WriteMessage("\n" + chosen.Name + " đã liên kết với nguồn đã đăng ký; mũi tên có thể chỉ vào vị trí bất kỳ.");
             try { PaletteHost.Refresh(doc); } catch (System.Exception) { }
         }
-        else doc.Editor.WriteMessage("\nKhong gan duoc GC: " + result);
+        else doc.Editor.WriteMessage("\nKhông gắn được GC: " + result);
     }
 
     [CommandMethod("LLMAUTOLINK", CommandFlags.Modal)]
@@ -640,7 +640,7 @@ public sealed class Commands
             if (tr.GetObject(note, OpenMode.ForRead, false) is MLeader leader &&
                 LengthData.ReadLink(leader)?.IsGc == true)
             {
-                doc.Editor.WriteMessage("\nGhi chu GC theo DIM da dang ky; mui ten co the chi vao vi tri bat ky.");
+                doc.Editor.WriteMessage("\nGhi chú GC theo DIM đã đăng ký; mũi tên có thể chỉ vào vị trí bất kỳ.");
                 return;
             }
             tr.Commit();
@@ -649,17 +649,17 @@ public sealed class Commands
         try { source = LiveEngine.FindSourceAtArrow(doc, note); }
         catch (System.Exception ex)
         {
-            doc.Editor.WriteMessage("\nKhong doc duoc dau mui ten: " + ex.Message);
+            doc.Editor.WriteMessage("\nKhông đọc được đầu mũi tên: " + ex.Message);
             return;
         }
         if (source.IsNull && promptIfMissing)
         {
-            doc.Editor.WriteMessage("\nKhong tim thay nguon tai mui ten. Chon duong nguon de L= tu cap nhat.");
+            doc.Editor.WriteMessage("\nKhông tìm thấy nguồn tại mũi tên. Chọn đường nguồn để L= tự cập nhật.");
             source = PickSource(doc.Editor);
         }
         if (source.IsNull)
         {
-            doc.Editor.WriteMessage("\nKhong tim thay mot LINE / PLINE / ARC / SPLINE / ELLIPSE / MLINE / DIM ro rang tai dau mui ten. Hay bat OSNAP vao duong.");
+            doc.Editor.WriteMessage("\nKhông tìm thấy một LINE / PLINE / ARC / SPLINE / ELLIPSE / MLINE / DIM rõ ràng tại đầu mũi tên. Hãy bật OSNAP vào đường.");
             return;
         }
         Link(doc, note, source);
@@ -673,7 +673,7 @@ public sealed class Commands
         var note = GetPendingNote(doc);
         if (note.IsNull)
         {
-            doc.Editor.WriteMessage("\nKhong co chu thich duoc chon. Hay chon dong trong Palette.");
+            doc.Editor.WriteMessage("\nKhông có chú thích được chọn. Hãy chọn dòng trong Palette.");
             return;
         }
         using (var tr = doc.Database.TransactionManager.StartTransaction())
@@ -726,7 +726,7 @@ public sealed class Commands
         }
         if (sourceHandle == null)
         {
-            doc.Editor.WriteMessage("\nChu thich chua co duong nguon.");
+            doc.Editor.WriteMessage("\nChú thích chưa có đường nguồn.");
             return;
         }
         ZoomHandle(doc, sourceHandle);
@@ -737,8 +737,8 @@ public sealed class Commands
     {
         var doc = AcadApp.DocumentManager.MdiActiveDocument;
         if (doc == null) return;
-        var options = new PromptEntityOptions("\nChon MLeader LiveLength de do vi tri nguon: ");
-        options.SetRejectMessage("\nHay chon MLeader.");
+        var options = new PromptEntityOptions("\nChọn MLeader LiveLength để dò vị trí nguồn: ");
+        options.SetRejectMessage("\nHãy chọn MLeader.");
         options.AddAllowedClass(typeof(MLeader), true);
         var picked = doc.Editor.GetEntity(options);
         if (picked.Status != PromptStatus.OK) return;
@@ -751,7 +751,7 @@ public sealed class Commands
         }
         if (string.IsNullOrWhiteSpace(sourceHandle))
         {
-            doc.Editor.WriteMessage("\nMLeader nay chua co lien ket LiveLength.");
+            doc.Editor.WriteMessage("\nMLeader này chưa có liên kết LiveLength.");
             return;
         }
         PendingDocName = doc.Name;
@@ -778,7 +778,7 @@ public sealed class Commands
         var doc = AcadApp.DocumentManager.MdiActiveDocument;
         if (doc == null) return;
         var count = LiveEngine.Synchronize(doc);
-        doc.Editor.WriteMessage($"\nLiveLength: da cap nhat {count} chu thich.");
+        doc.Editor.WriteMessage($"\nLiveLength: đã cập nhật {count} chú thích.");
         try { PaletteHost.Refresh(doc); }
         catch (System.Exception) { }
     }
@@ -787,14 +787,14 @@ public sealed class Commands
     public void Enable()
     {
         LiveEngine.SetEnabled(true);
-        AcadApp.DocumentManager.MdiActiveDocument?.Editor.WriteMessage("\nLiveLength auto ON.");
+        AcadApp.DocumentManager.MdiActiveDocument?.Editor.WriteMessage("\nLiveLength: đã bật tự động cập nhật.");
     }
 
     [CommandMethod("LLOFF", CommandFlags.Modal)]
     public void Disable()
     {
         LiveEngine.SetEnabled(false);
-        AcadApp.DocumentManager.MdiActiveDocument?.Editor.WriteMessage("\nLiveLength auto OFF.");
+        AcadApp.DocumentManager.MdiActiveDocument?.Editor.WriteMessage("\nLiveLength: đã tắt tự động cập nhật.");
     }
 
     private static ObjectId GetPendingNote(Document doc)
@@ -807,8 +807,8 @@ public sealed class Commands
 
     private static ObjectId PickNote(Editor ed)
     {
-        var opts = new PromptEntityOptions("\nChon MTEXT / MLEADER / TEXT can gan: ");
-        opts.SetRejectMessage("\nChi ho tro MTEXT, MLEADER MTEXT, TEXT.");
+        var opts = new PromptEntityOptions("\nChọn MTEXT / MLEADER / TEXT cần gắn: ");
+        opts.SetRejectMessage("\nChỉ hỗ trợ MTEXT, MLEADER MTEXT, TEXT.");
         opts.AddAllowedClass(typeof(MText), true);
         opts.AddAllowedClass(typeof(MLeader), true);
         opts.AddAllowedClass(typeof(DBText), true);
@@ -819,8 +819,8 @@ public sealed class Commands
 
     private static ObjectId PickSource(Editor ed)
     {
-        var opts = new PromptEntityOptions("\nChon LINE / PLINE / ARC / SPLINE / ELLIPSE / MLINE / DIM lam nguon chieu dai: ");
-        opts.SetRejectMessage("\nChi ho tro LINE, PLINE 2D/3D, ARC, SPLINE, ELLIPSE, MLINE, DIM tuyen tinh.");
+        var opts = new PromptEntityOptions("\nChọn LINE / PLINE / ARC / SPLINE / ELLIPSE / MLINE / DIM làm nguồn chiều dài: ");
+        opts.SetRejectMessage("\nChỉ hỗ trợ LINE, PLINE 2D/3D, ARC, SPLINE, ELLIPSE, MLINE, DIM tuyến tính.");
         opts.AddAllowedClass(typeof(Line), true);
         opts.AddAllowedClass(typeof(Polyline), true);
         opts.AddAllowedClass(typeof(Polyline2d), true);
@@ -839,14 +839,14 @@ public sealed class Commands
     {
         if (PendingDocName != doc.Name || string.IsNullOrWhiteSpace(handle))
         {
-            doc.Editor.WriteMessage("\nHay chon doi tuong trong bang LiveLength truoc.");
+            doc.Editor.WriteMessage("\nHãy chọn đối tượng trong bảng LiveLength trước.");
             return;
         }
         var db = doc.Database;
         var id = LengthData.Resolve(db, handle);
         if (id.IsNull || id.IsErased)
         {
-            doc.Editor.WriteMessage("\nKhong tim thay doi tuong: co the da bi xoa.");
+            doc.Editor.WriteMessage("\nKhông tìm thấy đối tượng: có thể đã bị xóa.");
             return;
         }
         Extents3d ext;
@@ -857,7 +857,7 @@ public sealed class Commands
             try { ext = obj.GeometricExtents; }
             catch
             {
-                doc.Editor.WriteMessage("\nKhong doc duoc vung bao doi tuong.");
+                doc.Editor.WriteMessage("\nKhông đọc được vùng bao đối tượng.");
                 return;
             }
             if (tr.GetObject(obj.OwnerId, OpenMode.ForRead) is BlockTableRecord btr && btr.IsLayout)
@@ -916,12 +916,12 @@ public sealed class Commands
                 doc.Editor.DrawVector(b, c, 1, true);
                 doc.Editor.DrawVector(c, d, 1, true);
                 doc.Editor.DrawVector(d, a, 1, true);
-                doc.Editor.WriteMessage("\nDa do vi tri nguon GC; khung do la net tam tren man hinh, khong luu vao DWG.");
+                doc.Editor.WriteMessage("\nĐã dò vị trí nguồn GC; khung đỏ là nét tạm trên màn hình, không lưu vào DWG.");
             }
         }
         catch (System.Exception ex)
         {
-            doc.Editor.WriteMessage("\nKhong the Zoom: " + ex.Message);
+            doc.Editor.WriteMessage("\nKhông thể Zoom: " + ex.Message);
         }
     }
 }

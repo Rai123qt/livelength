@@ -285,7 +285,7 @@ internal static class LiveEngine
         if (!DocumentDatabases.TryGetValue(doc, out var db)) return;
         _closedDocumentName = null;
         var changed = Dirty.Remove(db);
-        var refreshPalette = changed;
+        var delta = new PaletteDelta { Full = changed };
         if (changed && _enabled && !RedoProtected.Contains(db))
         {
             try
@@ -293,8 +293,9 @@ internal static class LiveEngine
                 using (doc.LockDocument())
                 {
                     var arrows = RefreshArrowSources(doc, db);
-                    // Edits to unrelated geometry no longer rescan the palette.
-                    refreshPalette = SynchronizePending(doc, db) | arrows;
+                    // Edits to unrelated geometry no longer touch the palette.
+                    delta = SynchronizePending(doc, db);
+                    delta.Notes.UnionWith(arrows);
                 }
             }
             catch (System.Exception)
@@ -307,11 +308,11 @@ internal static class LiveEngine
         }
         // UI refresh is deliberately throttled; editing the DataGridView is never done
         // in ObjectModified/ObjectErased event callbacks.
-        if (PaletteHost.IsVisible && refreshPalette)
+        if (PaletteHost.IsVisible && !delta.IsEmpty)
         {
             try
             {
-                using (doc.LockDocument()) PaletteHost.Refresh(doc);
+                using (doc.LockDocument()) PaletteHost.Refresh(doc, delta);
             }
             catch (System.Exception) { /* palette will refresh on next idle */ }
         }
@@ -351,21 +352,22 @@ internal static class LiveEngine
         return count;
     }
 
-    // Updates only notes that were edited or depend on an edited source.
-    // Returns true when the palette has something new to show.
-    private static bool SynchronizePending(Document doc, Database db)
+    // Updates only notes that were edited or depend on an edited source and
+    // reports which palette rows need re-reading.
+    private static PaletteDelta SynchronizePending(Document doc, Database db)
     {
+        var delta = new PaletteDelta();
         Changed.Remove(db, out var ids);
         var handles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (ids != null) foreach (var id in ids) handles.Add(id.Handle.ToString());
         if (FullSync.Contains(db) || !Dependents.TryGetValue(db, out var index))
         {
             Synchronize(doc, handles);
-            return true;
+            delta.Full = true;
+            return delta;
         }
-        if (_syncing || ids == null || ids.Count == 0) return false;
+        if (_syncing || ids == null || ids.Count == 0) return delta;
         _syncing = true;
-        var relevant = false;
         try
         {
             using var tr = db.TransactionManager.StartOpenCloseTransaction();
@@ -373,31 +375,30 @@ internal static class LiveEngine
             foreach (var id in ids)
             {
                 // Handle is readable without opening, so erased sources still map to notes.
-                if (index.TryGetValue(id.Handle.ToString(), out var notes))
-                {
-                    targets.UnionWith(notes);
-                    relevant = true;
-                }
+                if (index.TryGetValue(id.Handle.ToString(), out var notes)) targets.UnionWith(notes);
                 try
                 {
                     if (tr.GetObject(id, OpenMode.ForRead, true) is not Entity e) continue;
-                    if (GcData.IsRegistered(e)) relevant = true;
+                    if (GcData.IsRegistered(e)) delta.GcSources.Add(e.Handle.ToString());
                     if (!LengthData.IsNote(e) || !LengthData.HasAppData(e)) continue;
-                    relevant = true;
+                    // Erased notes stay in the delta so their rows are removed.
+                    delta.Notes.Add(e.Handle.ToString());
                     if (!id.IsErased) targets.Add(id);
                 }
                 catch (System.Exception) { }
             }
             foreach (var id in targets)
             {
-                if (id.IsNull || id.IsErased) continue;
+                if (id.IsNull) continue;
+                delta.Notes.Add(id.Handle.ToString());
+                if (id.IsErased) continue;
                 try { SyncNote(tr, db, id, index, handles); }
                 catch (System.Exception) { /* malformed one note must not stop others */ }
             }
             tr.Commit();
         }
         finally { _syncing = false; }
-        return relevant;
+        return delta;
     }
 
     private static void AddDependent(Dictionary<string, HashSet<ObjectId>> index, string handle, ObjectId note)
@@ -514,45 +515,75 @@ internal static class LiveEngine
             {
                 try
                 {
-                    if (tr.GetObject(entityId, OpenMode.ForRead, false) is not Entity e ||
-                        !LengthData.IsNote(e)) continue;
-                    var link = LengthData.ReadLink(e);
-                    var plain = link == null && LengthData.IsPlainNote(e);
-                    if (link == null && !plain) continue;
-                    var txt = LengthData.ReadText(e) ?? "";
-                    var pos = LengthData.GetPosition(e, out bool posOk);
-                    var row = new NoteRow
-                    {
-                        Handle = e.Handle.ToString(),
-                        Type = e is MLeader ? "MLEADER" : e is MText ? "MTEXT" : "TEXT",
-                        CurrentText = txt,
-                        Description = LengthData.Preview(txt),
-                        Layer = e.Layer,
-                        Layout = layout.LayoutName,
-                        Position = pos,
-                        HasPosition = posOk,
-                        Link = link,
-                        Linked = link != null
-                    };
-                    if (link != null)
-                    {
-                        row.SourceHandle = link.SourceHandle;
-                        row.DrawingLength = LengthData.GetLength(tr, doc.Database, link.SourceHandle);
-                        row.LengthMeters = row.DrawingLength * link.Factor;
-                        row.SecondaryLengthMeters = link.SecondarySourceHandle.Length > 0
-                            ? LengthData.GetLength(tr, doc.Database, link.SecondarySourceHandle) * link.Factor : null;
-                        row.State = row.DrawingLength.HasValue &&
-                            (link.SecondarySourceHandle.Length == 0 || row.SecondaryLengthMeters.HasValue)
-                            ? "Đã liên kết" : "Mất liên kết";
-                    }
-                    else row.State = "Ghi chú thường";
-                    rows.Add(row);
+                    if (tr.GetObject(entityId, OpenMode.ForRead, false) is Entity e &&
+                        BuildRow(tr, doc.Database, e, layout.LayoutName) is { } row) rows.Add(row);
                 }
                 catch (System.Exception) { }
             }
         }
         tr.Commit();
-        return rows.OrderBy(r => r.Layout).ThenBy(r => r.Layer).ThenBy(r => r.Handle).ToList();
+        return SortRows(rows);
+    }
+
+    internal static List<NoteRow> SortRows(IEnumerable<NoteRow> rows) =>
+        rows.OrderBy(r => r.Layout).ThenBy(r => r.Layer).ThenBy(r => r.Handle).ToList();
+
+    /// <summary>Reads only the given notes. Erased or non-LiveLength handles yield no row.</summary>
+    internal static List<NoteRow> GetRowsFor(Document doc, IEnumerable<string> handles)
+    {
+        var rows = new List<NoteRow>();
+        var db = doc.Database;
+        using var tr = db.TransactionManager.StartOpenCloseTransaction();
+        foreach (var handle in handles)
+        {
+            try
+            {
+                var id = LengthData.Resolve(db, handle);
+                if (id.IsNull || id.IsErased || tr.GetObject(id, OpenMode.ForRead, false) is not Entity e ||
+                    tr.GetObject(e.OwnerId, OpenMode.ForRead) is not BlockTableRecord { IsLayout: true } btr) continue;
+                var layout = (Layout)tr.GetObject(btr.LayoutId, OpenMode.ForRead);
+                if (BuildRow(tr, db, e, layout.LayoutName) is { } row) rows.Add(row);
+            }
+            catch (System.Exception) { }
+        }
+        tr.Commit();
+        return rows;
+    }
+
+    private static NoteRow? BuildRow(Transaction tr, Database db, Entity e, string layoutName)
+    {
+        if (!LengthData.IsNote(e)) return null;
+        var link = LengthData.ReadLink(e);
+        var plain = link == null && LengthData.IsPlainNote(e);
+        if (link == null && !plain) return null;
+        var txt = LengthData.ReadText(e) ?? "";
+        var pos = LengthData.GetPosition(e, out bool posOk);
+        var row = new NoteRow
+        {
+            Handle = e.Handle.ToString(),
+            Type = e is MLeader ? "MLEADER" : e is MText ? "MTEXT" : "TEXT",
+            CurrentText = txt,
+            Description = LengthData.Preview(txt),
+            Layer = e.Layer,
+            Layout = layoutName,
+            Position = pos,
+            HasPosition = posOk,
+            Link = link,
+            Linked = link != null
+        };
+        if (link != null)
+        {
+            row.SourceHandle = link.SourceHandle;
+            row.DrawingLength = LengthData.GetLength(tr, db, link.SourceHandle);
+            row.LengthMeters = row.DrawingLength * link.Factor;
+            row.SecondaryLengthMeters = link.SecondarySourceHandle.Length > 0
+                ? LengthData.GetLength(tr, db, link.SecondarySourceHandle) * link.Factor : null;
+            row.State = row.DrawingLength.HasValue &&
+                (link.SecondarySourceHandle.Length == 0 || row.SecondaryLengthMeters.HasValue)
+                ? "Đã liên kết" : "Mất liên kết";
+        }
+        else row.State = "Ghi chú thường";
+        return row;
     }
 
     internal static void UpdateGcNotes(Document doc, string sourceHandle, string code, string description)
@@ -879,9 +910,9 @@ internal static class LiveEngine
             Math.Min(SegmentDistance(tip, dim.XLine1Point, first), SegmentDistance(tip, dim.XLine2Point, second)));
     }
 
-    private static bool RefreshArrowSources(Document doc, Database db)
+    private static IEnumerable<string> RefreshArrowSources(Document doc, Database db)
     {
-        if (!ArrowDirty.Remove(db, out var modified)) return false;
+        if (!ArrowDirty.Remove(db, out var modified)) return Array.Empty<string>();
         foreach (var noteId in modified)
         {
             try
@@ -912,7 +943,7 @@ internal static class LiveEngine
             }
             catch (System.Exception) { }
         }
-        return modified.Count > 0;
+        return modified.Where(id => !id.IsNull).Select(id => id.Handle.ToString()).ToList();
     }
 
     private static void ClearSource(Document doc, ObjectId noteId)

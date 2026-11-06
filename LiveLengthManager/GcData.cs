@@ -45,25 +45,51 @@ internal static class GcData
             {
                 try
                 {
-                    if (tr.GetObject(id, OpenMode.ForRead, false) is not Entity source ||
-                        !LengthData.IsSource(source) || ReadEntry(source) is not { } entry) continue;
-                    var length = LengthData.GetLength(tr, doc.Database, source.Handle.ToString());
-                    if (length == null) continue;
-                    result.Add(new GcRow
-                    {
-                        Name = entry.Name,
-                        Description = entry.Description,
-                        SourceType = source.GetType().Name.ToUpperInvariant(),
-                        Handle = source.Handle.ToString(),
-                        LengthMeters = length.Value * LengthData.DefaultFactor
-                    });
+                    if (tr.GetObject(id, OpenMode.ForRead, false) is Entity source &&
+                        BuildRow(tr, doc.Database, source) is { } row) result.Add(row);
                 }
                 catch (System.Exception) { }
             }
         }
         tr.Commit();
-        return result.OrderBy(r => int.TryParse(r.Name[2..], out var number) ? number : int.MaxValue)
+        return Sort(result);
+    }
+
+    internal static List<GcRow> GetRowsFor(Document doc, IEnumerable<string> handles)
+    {
+        var result = new List<GcRow>();
+        using var tr = doc.Database.TransactionManager.StartOpenCloseTransaction();
+        foreach (var handle in handles)
+        {
+            try
+            {
+                var id = LengthData.Resolve(doc.Database, handle);
+                if (!id.IsNull && !id.IsErased && tr.GetObject(id, OpenMode.ForRead, false) is Entity source &&
+                    BuildRow(tr, doc.Database, source) is { } row) result.Add(row);
+            }
+            catch (System.Exception) { }
+        }
+        tr.Commit();
+        return result;
+    }
+
+    internal static List<GcRow> Sort(IEnumerable<GcRow> rows) =>
+        rows.OrderBy(r => int.TryParse(r.Name[2..], out var number) ? number : int.MaxValue)
             .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase).ToList();
+
+    private static GcRow? BuildRow(Transaction tr, Database db, Entity source)
+    {
+        if (!LengthData.IsSource(source) || ReadEntry(source) is not { } entry) return null;
+        var length = LengthData.GetLength(tr, db, source.Handle.ToString());
+        if (length == null) return null;
+        return new GcRow
+        {
+            Name = entry.Name,
+            Description = entry.Description,
+            SourceType = source.GetType().Name.ToUpperInvariant(),
+            Handle = source.Handle.ToString(),
+            LengthMeters = length.Value * LengthData.DefaultFactor
+        };
     }
 
     internal static string NextName(IEnumerable<GcRow> rows)

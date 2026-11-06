@@ -2,7 +2,7 @@
 
 Mã nguồn plugin AutoCAD 2027 (.NET 10, C#) để tạo và quản lý MLeader có chiều dài tự cập nhật từ LINE, PLINE, ARC, SPLINE, ELLIPSE, MLINE hoặc DIM. Bảng quản lý có tab ghi chú chiều dài, tab giật cấp GC và tab cài đặt.
 
-Phiên bản mã nguồn: **3.9.8**. Chạy lệnh `LLMGR` trong AutoCAD để mở bảng quản lý.
+Phiên bản mã nguồn: **3.9.9**. Chạy lệnh `LLMGR` trong AutoCAD để mở bảng quản lý.
 
 ## Cấu trúc dự án
 
