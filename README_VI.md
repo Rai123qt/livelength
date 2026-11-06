@@ -2,7 +2,7 @@
 
 Mã nguồn plugin AutoCAD 2027 (.NET 10, C#) để tạo và quản lý MLeader có chiều dài tự cập nhật từ LINE, PLINE, ARC, SPLINE, ELLIPSE, MLINE hoặc DIM. Bảng quản lý có tab ghi chú chiều dài, tab giật cấp GC và tab cài đặt.
 
-Phiên bản mã nguồn: **3.11.0**. Chạy lệnh `LLMGR` trong AutoCAD để mở bảng quản lý.
+Phiên bản mã nguồn: **3.12.0**. Chạy lệnh `LLMGR` trong AutoCAD để mở bảng quản lý.
 
 ## Cấu trúc dự án
 
@@ -54,8 +54,9 @@ Plugin kiểm tra GitHub Releases tối đa 1 lần/ngày (tắt được trong 
 ### Phát hành bản mới
 
 1. Tăng `Version` trong `LiveLengthManager/LiveLengthManager.csproj` và hai chỗ `Version` trong `LiveLengthManager2027.bundle/PackageContents.xml`.
+   Thêm mục `## [X.Y.Z]` vào đầu `CHANGELOG.md`; nội dung mục này thành ghi chú của Release.
 2. Merge vào `main`.
 3. Tạo release với tag trùng phiên bản, ví dụ `v3.12.0` (trang Releases → *Draft a new release*, hoặc `git tag v3.12.0 && git push origin v3.12.0`).
-4. Workflow `release.yml` tự build, kiểm tra tag khớp phiên bản, đính kèm bộ cài ZIP, `LiveLengthManager.dll` và `.sha256` vào release. Người dùng sẽ thấy thông báo cập nhật.
+4. Workflow `release.yml` tự build, kiểm tra tag khớp phiên bản và có mục trong `CHANGELOG.md`, đính kèm bộ cài ZIP, `LiveLengthManager.dll` và `.sha256` vào release. Người dùng sẽ thấy thông báo cập nhật.
 
 Không commit file ZIP hay DLL build vào lịch sử Git.
