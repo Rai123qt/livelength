@@ -2,6 +2,15 @@
 
 Mỗi bản phát hành có một mục `## [X.Y.Z]`. Khi tạo tag `vX.Y.Z`, workflow `release.yml` lấy đúng mục này làm ghi chú của GitHub Release, và nút **Xem thay đổi** trong plugin mở trang đó.
 
+## [3.13.2] - 2026-11-06
+
+### Sửa
+- Nút **—** khi bảng dính cạnh làm bảng trống và không mở lại được. Giờ: bảng nổi thì cuộn lên thanh tiêu đề; bảng dính cạnh thì ẩn đi, gõ `LLMGR` hoặc `LLMTOGGLE` để mở lại. Muốn bảng thu vào cạnh màn hình khi dính cạnh, dùng nút tự ẩn (auto-hide) có sẵn trên thanh tiêu đề của bảng.
+- Đổi kiểu chữ TNR → VNROMANS rồi đổi lại TNR giữ nguyên nội dung gốc (chữ hoa có dấu, font) nếu chưa sửa nội dung.
+
+### Thêm
+- Lệnh `LLMCODES`: hiện và chép mã ký tự của một ghi chú, dùng để xác định bảng mã thật của font VNROMANS.
+
 ## [3.13.1] - 2026-11-06
 
 ### Sửa
