@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace LiveLengthManager;
 
-internal sealed record ReleaseInfo(Version Version, string PageUrl, string DllUrl, string? ShaUrl);
+internal sealed record ReleaseInfo(Version Version, string PageUrl, string DllUrl, string? ShaUrl, string Notes = "");
 
 internal enum UpdateState { None, Available, Downloading, Ready, Failed }
 
@@ -37,6 +37,27 @@ internal static class Updater
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LiveLengthManager2027");
     private static string SettingFile => System.IO.Path.Combine(DataDir, "auto-update.txt");
     private static string LastCheckFile => System.IO.Path.Combine(DataDir, "update-check.txt");
+    private static string SkipFile => System.IO.Path.Combine(DataDir, "update-skip.txt");
+    private static int _prompt;
+
+    /// <summary>True once per check that should open the update popup; read on AutoCAD's main thread.</summary>
+    internal static bool TakePrompt() => Interlocked.Exchange(ref _prompt, 0) == 1;
+
+    internal static void Skip(Version version)
+    {
+        try
+        {
+            System.IO.Directory.CreateDirectory(DataDir);
+            System.IO.File.WriteAllText(SkipFile, version.ToString());
+        }
+        catch { }
+    }
+
+    private static bool IsSkipped(Version version)
+    {
+        try { return System.IO.File.Exists(SkipFile) && System.IO.File.ReadAllText(SkipFile).Trim() == version.ToString(); }
+        catch { return false; }
+    }
     private static string VersionDir(Version v) => System.IO.Path.Combine(DataDir, "versions", v.ToString());
 
     internal static bool AutoCheck
@@ -81,13 +102,13 @@ internal static class Updater
         if (Interlocked.Exchange(ref _checking, 1) == 1) return;
         Task.Run(async () =>
         {
-            try { await CheckAsync(); }
+            try { await CheckAsync(force); }
             catch (System.Exception ex) { Error = ex.Message; if (force) Set(UpdateState.Failed); }
             finally { Interlocked.Exchange(ref _checking, 0); }
         });
     }
 
-    private static async Task CheckAsync()
+    private static async Task CheckAsync(bool manual)
     {
         using var response = await Http.GetAsync($"https://api.github.com/repos/{Repository}/releases/latest");
         // 404: the repository has no published release yet.
@@ -112,9 +133,12 @@ internal static class Updater
         }
         catch { }
         if (Normalize(version) <= Normalize(CurrentVersion) || dll == null) { Set(UpdateState.None); return; }
-        Latest = new ReleaseInfo(Normalize(version), root.GetProperty("html_url").GetString() ?? "", dll, sha);
-        Set(System.IO.File.Exists(System.IO.Path.Combine(VersionDir(Latest.Version), DllAsset))
-            ? UpdateState.Ready : UpdateState.Available);
+        var notes = root.TryGetProperty("body", out var body) ? body.GetString() ?? "" : "";
+        Latest = new ReleaseInfo(Normalize(version), root.GetProperty("html_url").GetString() ?? "", dll, sha, notes);
+        var ready = System.IO.File.Exists(System.IO.Path.Combine(VersionDir(Latest.Version), DllAsset));
+        // Automatic checks pop up once per new version unless the user skipped it; manual checks always do.
+        if (manual || (!ready && !IsSkipped(Latest.Version))) Interlocked.Exchange(ref _prompt, 1);
+        Set(ready ? UpdateState.Ready : UpdateState.Available);
     }
 
     // After a skipped daily check, still show "ready" for a build staged earlier.

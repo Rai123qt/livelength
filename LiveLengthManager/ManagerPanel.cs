@@ -165,14 +165,14 @@ internal sealed class ManagerPanel : UserControl
     {
         Font = new Font("Segoe UI", 9f);
         BackColor = Color.FromArgb(246, 248, 251);
-        var host = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3,
+        var host = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2,
             Margin = Padding.Empty, Padding = Padding.Empty };
         host.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        host.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         host.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        var navigation = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1,
-            Margin = Padding.Empty, Padding = new Padding(6, 4, 6, 0) };
+        var navigation = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1,
+            Margin = Padding.Empty, Padding = new Padding(6, 4, 4, 0) };
         for (int i = 0; i < 3; i++) navigation.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / 3));
+        navigation.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
         // Thin divider under the tab strip.
         navigation.Paint += (_, e) =>
         {
@@ -216,10 +216,16 @@ internal sealed class ManagerPanel : UserControl
         AddNavigation("Chiều dài", lengthTab, 88);
         AddNavigation("Giật cấp GC", gcTab, 106);
         AddNavigation("Cài đặt", settingsTab, 82);
+        _collapseButton.Dock = DockStyle.Fill;
+        _collapseButton.FlatStyle = FlatStyle.Flat;
+        _collapseButton.Margin = new Padding(2, 2, 0, 4);
+        _collapseButton.Font = new Font("Segoe UI", 10f, FontStyle.Bold);
+        _collapseButton.Cursor = Cursors.Hand;
+        _collapseButton.Click += (_, _) => PaletteHost.Collapsed = !PaletteHost.Collapsed;
+        navigation.Controls.Add(_collapseButton, 3, 0);
         host.Controls.Add(navigation, 0, 0);
-        BuildUpdateBanner();
-        host.Controls.Add(_banner, 0, 1);
-        host.Controls.Add(contentHost, 0, 2);
+        HookUpdater();
+        host.Controls.Add(contentHost, 0, 1);
         BuildSettings(settingsTab, host);
         Controls.Add(host);
         var main = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6,
@@ -602,7 +608,9 @@ internal sealed class ManagerPanel : UserControl
         layout.Controls.Add(autoCheck, 0, 5);
         var versionRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
         versionRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        versionRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
+        versionRow.ColumnCount = 3;
+        versionRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 112));
+        versionRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 112));
         _updateStatus.Dock = DockStyle.Fill;
         _updateStatus.TextAlign = ContentAlignment.MiddleLeft;
         _updateStatus.AutoEllipsis = true;
@@ -617,6 +625,13 @@ internal sealed class ManagerPanel : UserControl
             Updater.CheckInBackground(true);
         };
         versionRow.Controls.Add(checkNow, 1, 0);
+        _notesButton.Text = "Xem thay đổi";
+        _notesButton.Dock = DockStyle.Fill;
+        _notesButton.FlatStyle = FlatStyle.Flat;
+        _notesButton.Margin = new Padding(4, 3, 0, 3);
+        _notesButton.Enabled = false;
+        _notesButton.Click += (_, _) => UpdateDialog.Open();
+        versionRow.Controls.Add(_notesButton, 2, 0);
         layout.Controls.Add(versionRow, 0, 6);
         layout.Controls.Add(new Label { Text = "Đơn vị mm/m được chọn riêng ở từng dòng ghi chú. " +
             "mm hiển thị số nguyên; m hiển thị tối đa 2 chữ số thập phân." + Environment.NewLine + Environment.NewLine +
@@ -650,7 +665,7 @@ internal sealed class ManagerPanel : UserControl
         foreach (DataGridViewRow row in _grid.Rows)
             if (row.Tag is NoteRow note) row.DefaultCellStyle.BackColor = NoteBack(note);
         StyleChips();
-        UpdateBanner();
+        UpdateStatus();
         root.Invalidate(true);
     }
 
@@ -1017,71 +1032,44 @@ internal sealed class ManagerPanel : UserControl
                 row.DefaultCellStyle.BackColor = NoteBack(note);
     }
 
-    private readonly TableLayoutPanel _banner = new();
-    private readonly Label _bannerText = new();
-    private readonly Button _bannerAction = new();
-    private readonly Button _bannerNotes = new();
-    private readonly Button _bannerClose = new();
     private readonly Label _updateStatus = new();
-    private UpdateState? _dismissed;
+    private readonly Button _notesButton = new();
+    private readonly Button _collapseButton = new();
     private bool _manualCheck;
 
-    private void BuildUpdateBanner()
+    private void HookUpdater()
     {
-        _banner.Dock = DockStyle.Fill;
-        _banner.AutoSize = true;
-        _banner.ColumnCount = 4;
-        _banner.RowCount = 1;
-        _banner.Margin = new Padding(10, 6, 10, 0);
-        _banner.Padding = new Padding(8, 3, 4, 3);
-        _banner.Visible = false;
-        _banner.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        _banner.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        _banner.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        _banner.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 28));
-        _bannerText.Dock = DockStyle.Fill;
-        _bannerText.TextAlign = ContentAlignment.MiddleLeft;
-        _bannerText.AutoEllipsis = true;
-        _banner.Controls.Add(_bannerText, 0, 0);
-        foreach (var (button, column) in new[] { (_bannerAction, 1), (_bannerNotes, 2), (_bannerClose, 3) })
-        {
-            button.FlatStyle = FlatStyle.Flat;
-            button.AutoSize = column != 3;
-            button.Height = 26;
-            button.Dock = column == 3 ? DockStyle.Fill : DockStyle.None;
-            button.Margin = new Padding(3, 0, 0, 0);
-            _banner.Controls.Add(button, column, 0);
-        }
-        _bannerAction.Tag = "primary";
-        _bannerNotes.Text = "Xem thay đổi";
-        _bannerClose.Text = "✕";
-        _tips.SetToolTip(_bannerClose, "Ẩn thông báo");
-        _bannerAction.Click += (_, _) =>
-        {
-            if (Updater.State == UpdateState.Available && Updater.LoaderPresent) Updater.DownloadInBackground();
-            else if (Updater.State == UpdateState.Failed) Updater.CheckInBackground(true);
-            else OpenUrl(Updater.Latest?.PageUrl);
-        };
-        _bannerNotes.Click += (_, _) => OpenUrl(Updater.Latest?.PageUrl);
-        _bannerClose.Click += (_, _) => { _dismissed = Updater.State; UpdateBanner(); };
         Action onChanged = () =>
         {
             if (IsDisposed || !IsHandleCreated) return;
-            try { BeginInvoke(new Action(UpdateBanner)); } catch (InvalidOperationException) { }
+            try { BeginInvoke(new Action(UpdateStatus)); } catch (InvalidOperationException) { }
         };
         Updater.Changed += onChanged;
-        Disposed += (_, _) => Updater.Changed -= onChanged;
-        HandleCreated += (_, _) => UpdateBanner();
+        Action onCollapse = () =>
+        {
+            if (IsDisposed || !IsHandleCreated) return;
+            try { BeginInvoke(new Action(UpdateCollapseButton)); } catch (InvalidOperationException) { }
+        };
+        PaletteHost.CollapsedChanged += onCollapse;
+        Disposed += (_, _) =>
+        {
+            Updater.Changed -= onChanged;
+            PaletteHost.CollapsedChanged -= onCollapse;
+        };
+        HandleCreated += (_, _) => { UpdateStatus(); UpdateCollapseButton(); };
     }
 
-    private static void OpenUrl(string? url)
+    private void UpdateCollapseButton()
     {
-        if (string.IsNullOrEmpty(url)) return;
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch (System.Exception ex) { MessageBox.Show(ex.Message, "LiveLength"); }
+        var collapsed = PaletteHost.Collapsed;
+        _collapseButton.Text = collapsed ? "□" : "—";
+        _tips.SetToolTip(_collapseButton, collapsed
+            ? "Giữ bảng luôn mở"
+            : "Thu nhỏ: bảng thu vào cạnh màn hình, rê chuột vào để mở lại. L= vẫn tự cập nhật.");
     }
 
-    private void UpdateBanner()
+    // Update status lives in Settings; the popup (UpdateDialog) handles the prompt itself.
+    private void UpdateStatus()
     {
         if (IsDisposed) return;
         var state = Updater.State;
@@ -1094,36 +1082,10 @@ internal sealed class ManagerPanel : UserControl
             UpdateState.Failed => "Không kiểm tra/tải được: " + Updater.Error,
             _ => _manualCheck ? $"v{Updater.CurrentText} là bản mới nhất." : $"Đang dùng v{Updater.CurrentText}"
         };
-        if (state is UpdateState.None || (state == UpdateState.Failed && !_manualCheck) || _dismissed == state)
-        {
-            _banner.Visible = false;
-            return;
-        }
-        var loader = Updater.LoaderPresent;
-        (_bannerText.Text, _bannerAction.Text, _bannerAction.Visible, _bannerNotes.Visible) = state switch
-        {
-            UpdateState.Available when loader => ($"Có bản mới {latest}", "Cập nhật", true, true),
-            UpdateState.Available => ($"Có bản mới {latest} — cài lại bằng bộ cài mới", "Tải bộ cài", true, false),
-            UpdateState.Downloading => ($"Đang tải {latest}…", "", false, false),
-            UpdateState.Ready => ($"Đã tải {latest}. Mở lại AutoCAD để dùng bản mới.", "", false, true),
-            _ => ("Không cập nhật được: " + Updater.Error, "Thử lại", true, false)
-        };
-        _tips.SetToolTip(_bannerText, _bannerText.Text);
-        var dark = _darkTheme;
-        _banner.BackColor = state == UpdateState.Failed
-            ? (dark ? Color.FromArgb(74, 55, 57) : Color.FromArgb(255, 240, 236))
-            : (dark ? Color.FromArgb(44, 66, 84) : Color.FromArgb(225, 238, 250));
-        _bannerText.ForeColor = dark ? Color.FromArgb(232, 238, 243) : Color.FromArgb(24, 52, 82);
-        foreach (var b in new[] { _bannerNotes, _bannerClose })
-        {
-            b.BackColor = _banner.BackColor;
-            b.ForeColor = _bannerText.ForeColor;
-            b.FlatAppearance.BorderSize = 0;
-        }
-        _bannerAction.BackColor = dark ? Color.FromArgb(66, 116, 150) : Color.FromArgb(35, 99, 150);
-        _bannerAction.ForeColor = Color.White;
-        _bannerAction.FlatAppearance.BorderSize = 0;
-        _banner.Visible = true;
+        _tips.SetToolTip(_updateStatus, _updateStatus.Text);
+        _notesButton.Enabled = Updater.Latest != null;
+        if (_navButtons.Count > 2)
+            _navButtons[2].Text = state is UpdateState.Available or UpdateState.Ready ? "Cài đặt  ●" : "Cài đặt";
     }
 
     internal void SetRows(Document doc, List<NoteRow> rows)

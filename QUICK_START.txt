@@ -1,4 +1,4 @@
-LIVELENGTH MANAGER 2027 V3.12.0 - HUONG DAN NHANH
+LIVELENGTH MANAGER 2027 V3.13.0 - HUONG DAN NHANH
 
 TU MA NGUON
 1. Cai AutoCAD 2027 va .NET 10 SDK.
@@ -16,7 +16,8 @@ Tab Giat cap GC dang ky DIM/LINE/PLINE/ARC/SPLINE/ELLIPSE/MLINE va tao ghi chu G
 Ghi chu co L= duoc cap nhat khi nguon thay doi tren may da cai plugin.
 
 AN / HIEN BANG
-Bam bieu tuong L o thanh trang thai AutoCAD. An bang khong dung tu cap nhat L=.
+Bam nut - o goc phai thanh tab de thu nho bang vao canh man hinh (re chuot de mo lai).
+Hoac bam bieu tuong L o thanh trang thai / go LLMTOGGLE. An bang khong dung tu cap nhat L=.
 
 CAP NHAT
-Khi co ban moi, bang LLMGR hien thong bao. Bam Cap nhat, mo lai AutoCAD de dung ban moi.
+Khi co ban moi, plugin hien cua so thong bao kem noi dung thay doi. Bam Cap nhat, mo lai AutoCAD de dung ban moi.

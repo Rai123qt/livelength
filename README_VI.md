@@ -2,7 +2,7 @@
 
 Mã nguồn plugin AutoCAD 2027 (.NET 10, C#) để tạo và quản lý MLeader có chiều dài tự cập nhật từ LINE, PLINE, ARC, SPLINE, ELLIPSE, MLINE hoặc DIM. Bảng quản lý có tab ghi chú chiều dài, tab giật cấp GC và tab cài đặt.
 
-Phiên bản mã nguồn: **3.12.0**. Chạy lệnh `LLMGR` trong AutoCAD để mở bảng quản lý.
+Phiên bản mã nguồn: **3.13.0**. Chạy lệnh `LLMGR` trong AutoCAD để mở bảng quản lý.
 
 ## Cấu trúc dự án
 
@@ -38,7 +38,7 @@ Không nạp hai bản LiveLength trong cùng một phiên AutoCAD. Hãy lưu b�
 - Khi chọn MLeader LiveLength trong bản vẽ, palette chuyển tới và đánh dấu dòng ghi chú tương ứng.
 
 - VNROMANS dùng bảng mã TCVN3 (ABC), TNR dùng Unicode. Bảng quản lý luôn hiển thị và cho sửa nội dung bằng Unicode; chuột phải vào dòng → **Đổi kiểu chữ** để chuyển qua lại, nội dung được đổi bảng mã tương ứng. TCVN3 không có chữ hoa có dấu nên các chữ đó thành chữ thường khi đổi sang VNROMANS.
-- Biểu tượng **L** ở thanh trạng thái AutoCAD dùng để ẩn/hiện bảng. Ẩn hoặc đóng bảng không làm dừng việc tự cập nhật `L=`.
+- Nút **—** ở góc phải thanh tab thu nhỏ bảng vào cạnh màn hình (rê chuột vào để mở lại); biểu tượng **L** ở thanh trạng thái hoặc lệnh `LLMTOGGLE` dùng để ẩn/hiện bảng. Ẩn hoặc đóng bảng không làm dừng việc tự cập nhật `L=`.
 
 ## Cập nhật
 
@@ -49,14 +49,14 @@ AutoCAD nạp `Contents\LiveLengthManager.Loader.dll` trong bundle. Loader chọ
 
 Bản nào nạp lỗi sẽ bị ghi vào `versions\bad.txt` và bỏ qua ở lần sau; loader nạp bản kế trước. Nhật ký ở `%AppData%\LiveLengthManager2027\loader.log`.
 
-Plugin kiểm tra GitHub Releases tối đa 1 lần/ngày (tắt được trong tab Cài đặt). Khi có bản mới, bảng quản lý hiện thông báo; bấm **Cập nhật** để tải về (kiểm tra SHA-256 và số phiên bản), bản mới được dùng từ lần mở AutoCAD sau. Người đang dùng bản trước 3.11 cần cài tay một lần bằng bộ cài 3.11 để có loader.
+Plugin kiểm tra GitHub Releases tối đa 1 lần/ngày (tắt được trong tab Cài đặt). Khi có bản mới, plugin hiện cửa sổ thông báo kèm nội dung thay đổi; bấm **Cập nhật** để tải về (kiểm tra SHA-256 và số phiên bản), bản mới được dùng từ lần mở AutoCAD sau. Người đang dùng bản trước 3.11 cần cài tay một lần bằng bộ cài 3.11 để có loader.
 
 ### Phát hành bản mới
 
 1. Tăng `Version` trong `LiveLengthManager/LiveLengthManager.csproj` và hai chỗ `Version` trong `LiveLengthManager2027.bundle/PackageContents.xml`.
    Thêm mục `## [X.Y.Z]` vào đầu `CHANGELOG.md`; nội dung mục này thành ghi chú của Release.
 2. Merge vào `main`.
-3. Tạo release với tag trùng phiên bản, ví dụ `v3.12.0` (trang Releases → *Draft a new release*, hoặc `git tag v3.12.0 && git push origin v3.12.0`).
+3. Tạo release với tag trùng phiên bản, ví dụ `v3.13.0` (trang Releases → *Draft a new release*, hoặc `git tag v3.13.0 && git push origin v3.13.0`).
 4. Workflow `release.yml` tự build, kiểm tra tag khớp phiên bản và có mục trong `CHANGELOG.md`, đính kèm bộ cài ZIP, `LiveLengthManager.dll` và `.sha256` vào release. Người dùng sẽ thấy thông báo cập nhật.
 
 Không commit file ZIP hay DLL build vào lịch sử Git.
