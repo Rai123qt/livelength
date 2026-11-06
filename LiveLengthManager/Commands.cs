@@ -57,6 +57,72 @@ public sealed class Commands
         try { PaletteHost.Refresh(doc); } catch (System.Exception) { }
     }
 
+    internal static bool PendingStyleVnromans;
+
+    // Switches a note between TNR (Unicode) and VNROMANS (TCVN3), converting its text and
+    // removing inline font overrides that would otherwise hide the new style's font.
+    [CommandMethod("LLMSTYLE", CommandFlags.Modal)]
+    public void ChangeNoteStyle()
+    {
+        var doc = AcadApp.DocumentManager.MdiActiveDocument;
+        if (doc == null) return;
+        var noteId = GetPendingNote(doc);
+        if (noteId.IsNull) return;
+        var toVn = PendingStyleVnromans;
+        var target = toVn ? "VNROMANS (TCVN3)" : "TNR (Unicode)";
+        var lossy = 0;
+        try
+        {
+            var db = doc.Database;
+            using var tr = db.TransactionManager.StartTransaction();
+            if (tr.GetObject(noteId, OpenMode.ForRead, false) is not Entity note) return;
+            if (LiveEngine.IsTcvn3(tr, note) == toVn)
+            {
+                doc.Editor.WriteMessage($"\nGhi chú đã dùng kiểu {target}.");
+                return;
+            }
+            string Convert(string text)
+            {
+                text = Tcvn3.StripFontOverrides(text);
+                if (!toVn) return Tcvn3.ToUnicode(text);
+                var result = Tcvn3.FromUnicode(text, out var lost);
+                lossy += lost;
+                return result;
+            }
+            var textStyle = EnsureTextStyle(db, tr, toVn ? 1 : 0);
+            var leaderStyle = EnsureMLeaderStyle(db, tr, toVn ? 1 : 0, textStyle);
+            note.UpgradeOpen();
+            var text = Convert(LengthData.ReadText(note) ?? "");
+            var textLossy = lossy;
+            switch (note)
+            {
+                case MLeader leader:
+                    leader.MLeaderStyle = leaderStyle;
+                    leader.TextStyleId = textStyle;
+                    break;
+                case MText mtext: mtext.TextStyleId = textStyle; break;
+                case DBText dbText: dbText.TextStyleId = textStyle; break;
+            }
+            LengthData.WriteText(note, text);
+            if (LengthData.ReadLink(note) is { IsGc: false } link)
+            {
+                link.Template = Convert(link.Template);
+                LengthData.WriteLink(note, link);
+                lossy = textLossy; // the template repeats the visible text; report it once
+            }
+            tr.Commit();
+        }
+        catch (System.Exception ex)
+        {
+            doc.Editor.WriteMessage("\nKhông đổi được kiểu chữ: " + ex.Message);
+            return;
+        }
+        LiveEngine.MarkDirty(doc);
+        doc.Editor.WriteMessage($"\nĐã đổi ghi chú sang kiểu {target}." +
+            (lossy > 0 ? $" TCVN3 không có chữ hoa có dấu: {lossy} ký tự đã chuyển thành chữ thường." : ""));
+        try { PaletteHost.Refresh(doc); } catch (System.Exception) { }
+    }
+
     [CommandMethod("LLMGR", CommandFlags.Modal)]
     public void ShowManager() => PaletteHost.Show();
 

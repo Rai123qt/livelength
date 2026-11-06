@@ -15,5 +15,6 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
-echo Uninstalled AutoCAD 2027 bundle. No DWG links were removed.
+if exist "%APPDATA%\LiveLengthManager2027\versions" rmdir /S /Q "%APPDATA%\LiveLengthManager2027\versions"
+echo Uninstalled AutoCAD 2027 bundle and downloaded updates. No DWG links were removed.
 pause

@@ -34,6 +34,9 @@ internal sealed class NoteRow
     public string CurrentText = "";
     public string Layer = "";
     public string Layout = "";
+    public string Style = "";
+    // VNROMANS notes store TCVN3; CurrentText/Description are converted to Unicode for display.
+    public bool Tcvn3;
     public Point3d Position = Point3d.Origin;
     public bool HasPosition;
     public bool Linked;

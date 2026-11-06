@@ -38,13 +38,19 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
+"%DOTNET_EXE%" build "%~dp0LiveLengthManager.Loader\LiveLengthManager.Loader.csproj" -c Release -f net10.0-windows "-p:AcadDir=%ACAD_DIR%" -o "%~dp0OUT\loader"
+if errorlevel 1 (
+    echo ERROR: Compilation failed. Keep the full error output to troubleshoot.
+    pause
+    exit /b 1
+)
 if not exist "%OUTPUT%\LiveLengthManager.dll" (
     echo ERROR: Build returned but output DLL was not found.
     pause
     exit /b 1
 )
 echo.
-echo BUILD OK: "%OUTPUT%\LiveLengthManager.dll"
+echo BUILD OK: "%OUTPUT%\LiveLengthManager.dll" and "%~dp0OUT\loader\LiveLengthManager.Loader.dll"
 echo Next: close AutoCAD and run INSTALL_AUTOSTART.cmd.
 pause
 exit /b 0
