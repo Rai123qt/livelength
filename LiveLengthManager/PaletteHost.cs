@@ -11,14 +11,29 @@ internal static class PaletteHost
     private static ManagerPanel? _panel;
     private static TrayItem? _tray;
     internal static bool IsVisible => _palette?.Visible == true;
+    private static string Title => "LiveLength Manager 2027 · v" + Updater.CurrentText;
+    internal static event Action? CollapsedChanged;
+
+    /// <summary>Auto-hide: docked, the palette folds into a tab on the screen edge and opens on hover;
+    /// floating, it rolls up to its title bar. L= keeps updating either way.</summary>
+    internal static bool Collapsed
+    {
+        get { try { return _palette?.AutoRollUp == true; } catch (System.Exception) { return false; } }
+        set
+        {
+            if (_palette == null) return;
+            try { _palette.AutoRollUp = value; }
+            catch (System.Exception ex) { PluginLog.Write("auto-hide: " + ex.Message); }
+            CollapsedChanged?.Invoke();
+        }
+    }
 
     internal static void Show()
     {
         if (_palette == null)
         {
             _panel = new ManagerPanel();
-            _palette = new PaletteSet("LiveLength Manager 2027 · v" + Updater.CurrentText,
-                new Guid("366D5A54-CDA7-40CC-9149-E2710EE64021"))
+            _palette = new PaletteSet(Title, new Guid("366D5A54-CDA7-40CC-9149-E2710EE64021"))
             {
                 Style = PaletteSetStyles.ShowAutoHideButton |
                         PaletteSetStyles.ShowCloseButton |
@@ -28,9 +43,13 @@ internal static class PaletteHost
                 DockEnabled = DockSides.Left | DockSides.Right
             };
             _panel.Dock = System.Windows.Forms.DockStyle.Fill;
+            _palette.StateChanged += (_, _) => { try { CollapsedChanged?.Invoke(); } catch (System.Exception) { } };
             _palette.Add("LiveLength", _panel);
         }
+        // AutoCAD restores a palette set's saved title by GUID; set it so the version is current.
+        try { _palette.Name = Title; } catch (System.Exception) { }
         _palette.Visible = true;
+        try { EnsureTray(); } catch (System.Exception ex) { PluginLog.Write("tray: " + ex.Message); }
         var doc = AcadApp.DocumentManager.MdiActiveDocument;
         if (doc != null)
         {
@@ -66,6 +85,7 @@ internal static class PaletteHost
         AcadApp.StatusBar.TrayItems.Add(item);
         AcadApp.StatusBar.Update();
         _tray = item;
+        PluginLog.Write("tray icon added");
     }
 
     private static Icon CreateIcon()

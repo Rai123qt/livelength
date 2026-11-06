@@ -124,7 +124,14 @@ public sealed class Commands
     }
 
     [CommandMethod("LLMGR", CommandFlags.Modal)]
-    public void ShowManager() => PaletteHost.Show();
+    public void ShowManager()
+    {
+        PaletteHost.Show();
+        if (PaletteHost.Collapsed) PaletteHost.Collapsed = false;
+    }
+
+    [CommandMethod("LLMTOGGLE", CommandFlags.Modal)]
+    public void ToggleManager() => PaletteHost.Toggle();
 
     [CommandMethod("LLMMTEXT2LEADER", CommandFlags.Modal)]
     public void CreateLeaderFromMText()

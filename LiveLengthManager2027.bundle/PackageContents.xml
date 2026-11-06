@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ApplicationPackage SchemaVersion="1.0" Version="3.12.0"
+<ApplicationPackage SchemaVersion="1.0" Version="3.13.0"
  ProductCode="{7BD2F10C-BD3E-44F0-91B9-79BA55D7A827}"
  Name="LiveLengthManager2027"
  Description="Live annotation length manager - AutoCAD 2027 (.NET 10)"
  Author="LiveLength Manager">
   <Components Description="LiveLength Manager AutoCAD 2027 plugin">
     <RuntimeRequirements OS="Win64" Platform="AutoCAD" SeriesMin="R26.0" SeriesMax="R26.0" SupportPath="./Contents" />
-    <ComponentEntry AppName="LiveLengthManager2027" AppType=".NET" Version="3.12.0"
+    <ComponentEntry AppName="LiveLengthManager2027" AppType=".NET" Version="3.13.0"
        ModuleName="./Contents/LiveLengthManager.Loader.dll"
        LoadOnAutoCADStartup="True" LoadOnCommandInvocation="False">
       <Commands GroupName="LIVELENGTH_MANAGER_2027">
@@ -24,6 +24,7 @@
         <Command Local="LLMZOOMSOURCE" Global="LLMZOOMSOURCE" />
         <Command Local="LLMUNLINK" Global="LLMUNLINK" />
         <Command Local="LLMSYNC" Global="LLMSYNC" />
+        <Command Local="LLMTOGGLE" Global="LLMTOGGLE" />
         <Command Local="LLMON" Global="LLMON" />
         <Command Local="LLOFF" Global="LLOFF" />
       </Commands>

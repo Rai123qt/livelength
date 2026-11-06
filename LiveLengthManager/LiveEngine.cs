@@ -280,13 +280,18 @@ internal static class LiveEngine
         {
             // First idle: AutoCAD's status bar exists and startup work is done.
             _booted = true;
-            try { PaletteHost.EnsureTray(); } catch (System.Exception) { }
+            try { PaletteHost.EnsureTray(); } catch (System.Exception ex) { PluginLog.Write("tray: " + ex.Message); }
             try
             {
                 Updater.CleanupOldVersions();
                 Updater.CheckInBackground(false);
             }
             catch (System.Exception) { }
+        }
+        if (Updater.TakePrompt())
+        {
+            try { UpdateDialog.Open(); }
+            catch (System.Exception ex) { PluginLog.Write("update dialog: " + ex.Message); }
         }
         // Idle fires constantly; skip the CMDNAMES query when there is nothing to do.
         if (Dirty.Count == 0 && _closedDocumentName == null &&
