@@ -1,0 +1,19 @@
+KIEM THU THU CONG TREN AUTOCAD 2027
+1. NETLOAD, LLMGR: Palette hien thi, quet MText va MLeader.
+2. LLMLINK, MTEXT chua co L=: tu them L=...m.
+3. LLMLINK, MLEADER co 'L = 12.3 m': chi thay con so.
+4. STRETCH/keo grip duong source -> L doi sau khi thao tac ket thuc.
+5. Sua via Properties, PEDIT, MOVE (doi vi tri khong doi dai): no error.
+6. ERASE source -> L = ?? m, Palette trang thai Mat lien ket.
+7. Ve source moi -> trong Palette click Gan lai PLINE -> L doi lai.
+8. Zoom ghi chu/Zoom duong tren Model, sau do tren Paper layout.
+9. COPY chu thich co XData -> ban sao hien thi va theo doi cung source.
+10. Undo ERASE va REDO, luu DWG, dong-mo (NETLOAD) -> du lieu van con.
+11. Chuyen giua 2 DWG -> danh sach trong Palette dung file dang active.
+12. Loc theo trang thai, layer; nhap ten day; xuat CSV mo trong Excel.
+13. Test voi 100+ MLEADER/MTEXT; khong bi lag khi STRETCH.
+14. Test MLEADER Block Content (khong lien ket); MText nhieu dong/dau.
+15. Kiem tra UNDO sau cap nhat tu dong tren ban sao.
+16. LLMGR chi hien ghi chu da gan LiveLength, khong liet ke MTEXT khac.
+17. LLMCREATE: pick PLINE, chon mui ten va vi tri chu, nhap 4 dong co 2 gia tri L=; MLeader duoc tao va ca hai L= tu cap nhat.
+18. Double-click dong trong Palette: zoom dung ghi chu o model va paper layout.

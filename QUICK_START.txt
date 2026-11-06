@@ -1,0 +1,16 @@
+LIVELENGTH MANAGER 2027 V3.9.7 - HUONG DAN NHANH
+
+TU MA NGUON
+1. Cai AutoCAD 2027 va .NET 10 SDK.
+2. Chay BUILD.cmd de tao DLL. Script tu tim AutoCAD 2027.
+3. Dong AutoCAD, chay BUILD_AND_INSTALL.cmd de build va cai plugin.
+4. Mo AutoCAD 2027, go LLMGR.
+
+TU BO CAI ZIP PHAT HANH
+1. Dong AutoCAD 2027.
+2. Giai nen ZIP, chay INSTALL_PORTABLE.cmd.
+3. Mo AutoCAD 2027, go LLMGR.
+
+Trong bang LLMGR, tab Chieu dai tao va quan ly MLeader co L=.
+Tab Giat cap GC dang ky DIM/LINE/PLINE/MLINE va tao ghi chu GC.
+Ghi chu co L= duoc cap nhat khi nguon thay doi tren may da cai plugin.

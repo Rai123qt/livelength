@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <UseWindowsForms>true</UseWindowsForms>
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>LiveLengthManager</AssemblyName>
+    <Version>3.9.7</Version>
+    <AssemblyVersion>3.9.7.0</AssemblyVersion>
+    <FileVersion>3.9.7.0</FileVersion>
+    <AcadDir Condition="'$(AcadDir)' == ''">C:\Program Files\Autodesk\AutoCAD 2027</AcadDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- These are supplied by AutoCAD 2027. Do not copy Autodesk DLLs into the bundle. -->
+    <Reference Include="AcMgd"><HintPath>$(AcadDir)\AcMgd.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="AcDbMgd"><HintPath>$(AcadDir)\AcDbMgd.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="AcCoreMgd"><HintPath>$(AcadDir)\AcCoreMgd.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="AdWindows"><HintPath>$(AcadDir)\AdWindows.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>
