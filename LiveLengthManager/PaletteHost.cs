@@ -13,29 +13,17 @@ internal static class PaletteHost
     internal static bool IsVisible => _palette?.Visible == true;
     private static string Title => "LiveLength Manager 2027  v" + Updater.CurrentText;
     internal static event Action? CollapsedChanged;
-    private const int CompactWidth = 44;
-    private static readonly Size ExpandedMinimum = new(430, 430);
-    private static bool _compact;
-    private static int _expandedWidth = 660;
-
-    // AutoRollUp only works for a floating palette set, and docked auto-hide (anchoring) cannot be
-    // set from .NET. Docked, "collapse" therefore narrows the palette to a thin strip instead.
+    // AutoRollUp only works on a floating palette set; docked auto-hide (anchoring) cannot be
+    // switched on from .NET, and a docked width change is ignored. Docked, collapsing hides the
+    // palette; AutoCAD's own auto-hide button on the docked title bar folds it into the edge.
     internal static bool Collapsed
     {
-        get
-        {
-            if (_compact) return true;
-            try { return _palette?.AutoRollUp == true; } catch (System.Exception) { return false; }
-        }
+        get { try { return _palette?.AutoRollUp == true; } catch (System.Exception) { return false; } }
         set
         {
-            if (_palette == null || _panel == null) return;
-            try
-            {
-                if (value) Collapse();
-                else Expand();
-            }
-            catch (System.Exception ex) { PluginLog.Write("collapse: " + ex.Message); }
+            if (_palette == null) return;
+            if (value) Collapse();
+            else Expand();
             CollapsedChanged?.Invoke();
         }
     }
@@ -49,33 +37,27 @@ internal static class PaletteHost
     {
         if (!Docked)
         {
-            _palette!.AutoRollUp = true;
-            return;
+            try
+            {
+                _palette!.AutoRollUp = true;
+                return;
+            }
+            catch (System.Exception ex) { PluginLog.Write("auto-roll-up: " + ex.Message); }
         }
-        _expandedWidth = Math.Max(ExpandedMinimum.Width, _palette!.Size.Width);
-        _compact = true;
-        _panel!.SetCompact(true);
-        _palette.MinimumSize = new Size(CompactWidth, 200);
-        _palette.Size = new Size(CompactWidth, _palette.Size.Height);
-        if (_palette.Size.Width > CompactWidth + 80)
-        {
-            // This AutoCAD build ignored the docked width: hide instead and say how to come back.
-            PluginLog.Write($"docked resize ignored (width {_palette.Size.Width}); hiding palette");
-            Expand();
-            _palette.Visible = false;
-            AcadApp.DocumentManager.MdiActiveDocument?.Editor.WriteMessage(
-                "\nLiveLength: đã ẩn bảng (L= vẫn tự cập nhật). Gõ LLMGR hoặc LLMTOGGLE để mở lại.");
-        }
+        try { _palette!.Visible = false; }
+        catch (System.Exception ex) { PluginLog.Write("hide: " + ex.Message); return; }
+        AcadApp.DocumentManager.MdiActiveDocument?.Editor.WriteMessage(
+            "\nLiveLength: đã ẩn bảng, L= vẫn tự cập nhật. Gõ LLMGR (hoặc LLMTOGGLE) để mở lại." +
+            "\nMuốn bảng thu vào cạnh màn hình khi đang dính cạnh: bấm nút tự ẩn (auto-hide) trên thanh tiêu đề của bảng.");
     }
 
+    // Each step is independent so one failing call can never leave the palette unusable.
     private static void Expand()
     {
-        _palette!.AutoRollUp = false;
-        if (!_compact) return;
-        _compact = false;
-        _panel!.SetCompact(false);
-        _palette.MinimumSize = ExpandedMinimum;
-        _palette.Size = new Size(_expandedWidth, _palette.Size.Height);
+        try { if (_palette!.AutoRollUp) _palette.AutoRollUp = false; }
+        catch (System.Exception ex) { PluginLog.Write("expand roll-up: " + ex.Message); }
+        try { if (!_palette!.Visible) _palette.Visible = true; }
+        catch (System.Exception ex) { PluginLog.Write("expand show: " + ex.Message); }
     }
 
     internal static void Show()

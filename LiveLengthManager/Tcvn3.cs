@@ -1,4 +1,5 @@
 using System.Text;
+using Autodesk.AutoCAD.DatabaseServices;
 
 namespace LiveLengthManager;
 
@@ -69,6 +70,51 @@ internal static class Tcvn3
     private static string DecodeEscapes(string text) => System.Text.RegularExpressions.Regex.Replace(text,
         @"(?<!\\)((?:\\\\)*)\\U\+([0-9A-Fa-f]{4})",
         m => m.Groups[1].Value + (char)Convert.ToInt32(m.Groups[2].Value, 16));
+
+    private const string BackupApp = "LLSTY2027";
+
+    /// <summary>Saves the Unicode text/template before switching to VNROMANS, so switching back is lossless.</summary>
+    internal static void SaveBackup(Database db, Transaction tr, Entity note, string text, string template)
+    {
+        var apps = (RegAppTable)tr.GetObject(db.RegAppTableId, OpenMode.ForRead);
+        if (!apps.Has(BackupApp))
+        {
+            apps.UpgradeOpen();
+            var app = new RegAppTableRecord { Name = BackupApp };
+            apps.Add(app);
+            tr.AddNewlyCreatedDBObject(app, true);
+        }
+        var values = new List<TypedValue> { new(1001, BackupApp), new(1000, "TEXT:") };
+        // 50 UTF-16 units stay well under the 255-byte XData string limit.
+        for (int i = 0; i < text.Length; i += 50) values.Add(new TypedValue(1000, text.Substring(i, Math.Min(50, text.Length - i))));
+        values.Add(new TypedValue(1000, "TPL:"));
+        for (int i = 0; i < template.Length; i += 50) values.Add(new TypedValue(1000, template.Substring(i, Math.Min(50, template.Length - i))));
+        using var buffer = new ResultBuffer(values.ToArray());
+        note.XData = buffer;
+    }
+
+    internal static (string Text, string Template)? ReadBackup(Entity note)
+    {
+        using var buffer = note.GetXDataForApplication(BackupApp);
+        if (buffer == null) return null;
+        var text = new StringBuilder();
+        var template = new StringBuilder();
+        StringBuilder? target = null;
+        foreach (var v in buffer.AsArray())
+        {
+            if (v.TypeCode != 1000 || v.Value is not string s) continue;
+            if (target == null && s == "TEXT:") target = text;
+            else if (ReferenceEquals(target, text) && s == "TPL:") target = template;
+            else target?.Append(s);
+        }
+        return target == null ? null : (text.ToString(), template.ToString());
+    }
+
+    internal static void ClearBackup(Entity note)
+    {
+        using var buffer = new ResultBuffer(new TypedValue(1001, BackupApp));
+        note.XData = buffer;
+    }
 
     /// <summary>Removes inline font overrides (\fArial|b0|...; or \Ffile.shx;) so the style font applies.</summary>
     internal static string StripFontOverrides(string text)

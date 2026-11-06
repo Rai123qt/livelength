@@ -71,6 +71,7 @@ public sealed class Commands
         var toVn = PendingStyleVnromans;
         var target = toVn ? "VNROMANS (TCVN3)" : "TNR (Unicode)";
         var lossy = 0;
+        var restored = false;
         try
         {
             var db = doc.Database;
@@ -92,8 +93,23 @@ public sealed class Commands
             var textStyle = EnsureTextStyle(db, tr, toVn ? 1 : 0);
             var leaderStyle = EnsureMLeaderStyle(db, tr, toVn ? 1 : 0, textStyle);
             note.UpgradeOpen();
-            var text = Convert(LengthData.ReadText(note) ?? "");
+            var original = LengthData.ReadText(note) ?? "";
+            var link = LengthData.ReadLink(note) is { IsGc: false } l ? l : null;
+            var text = Convert(original);
             var textLossy = lossy;
+            string? template = link == null ? null : Convert(link.Template);
+            if (toVn) Tcvn3.SaveBackup(db, tr, note, original, link?.Template ?? "");
+            else if (Tcvn3.ReadBackup(note) is { } backup)
+            {
+                // Untouched since the switch: restore the exact Unicode text (keeps capitals and fonts).
+                if (Tcvn3.FromUnicode(Tcvn3.StripFontOverrides(backup.Text), out _) == Tcvn3.StripFontOverrides(original))
+                {
+                    text = backup.Text;
+                    if (link != null && backup.Template.Length > 0) template = backup.Template;
+                    restored = true;
+                }
+                Tcvn3.ClearBackup(note);
+            }
             switch (note)
             {
                 case MLeader leader:
@@ -104,12 +120,12 @@ public sealed class Commands
                 case DBText dbText: dbText.TextStyleId = textStyle; break;
             }
             LengthData.WriteText(note, text);
-            if (LengthData.ReadLink(note) is { IsGc: false } link)
+            if (link != null && template != null)
             {
-                link.Template = Convert(link.Template);
+                link.Template = template;
                 LengthData.WriteLink(note, link);
-                lossy = textLossy; // the template repeats the visible text; report it once
             }
+            lossy = textLossy; // the template repeats the visible text; report it once
             tr.Commit();
         }
         catch (System.Exception ex)
@@ -119,8 +135,48 @@ public sealed class Commands
         }
         LiveEngine.MarkDirty(doc);
         doc.Editor.WriteMessage($"\nĐã đổi ghi chú sang kiểu {target}." +
-            (lossy > 0 ? $" TCVN3 không có chữ hoa có dấu: {lossy} ký tự đã chuyển thành chữ thường." : ""));
+            (restored ? " Đã khôi phục nguyên nội dung Unicode trước khi đổi." : "") +
+            (toVn && lossy > 0 ? $" TCVN3 không có chữ hoa có dấu: {lossy} ký tự đã chuyển thành chữ thường." : ""));
         try { PaletteHost.Refresh(doc); } catch (System.Exception) { }
+    }
+
+    // Diagnostic: prints the character codes of a text so a font's real encoding can be mapped.
+    [CommandMethod("LLMCODES", CommandFlags.Modal)]
+    public void DumpCodes()
+    {
+        var doc = AcadApp.DocumentManager.MdiActiveDocument;
+        if (doc == null) return;
+        var options = new PromptEntityOptions("\nChọn MTEXT / MLEADER / TEXT để xem mã ký tự: ");
+        options.SetRejectMessage("\nChỉ hỗ trợ MTEXT, MLEADER, TEXT.");
+        options.AddAllowedClass(typeof(MText), true);
+        options.AddAllowedClass(typeof(MLeader), true);
+        options.AddAllowedClass(typeof(DBText), true);
+        var picked = doc.Editor.GetEntity(options);
+        if (picked.Status != PromptStatus.OK) return;
+        string text, style;
+        using (var tr = doc.Database.TransactionManager.StartOpenCloseTransaction())
+        {
+            if (tr.GetObject(picked.ObjectId, OpenMode.ForRead) is not Entity e) return;
+            text = LengthData.ReadText(e) ?? "";
+            style = e switch
+            {
+                MLeader ml when tr.GetObject(ml.TextStyleId, OpenMode.ForRead) is TextStyleTableRecord s => s.Name + " / " + s.FileName,
+                MText m when tr.GetObject(m.TextStyleId, OpenMode.ForRead) is TextStyleTableRecord s => s.Name + " / " + s.FileName,
+                DBText t when tr.GetObject(t.TextStyleId, OpenMode.ForRead) is TextStyleTableRecord s => s.Name + " / " + s.FileName,
+                _ => ""
+            };
+            tr.Commit();
+        }
+        var codes = string.Join(" ", text.Where(c => c > 0x7E).Distinct().Select(c => $"{c}=U+{(int)c:X4}"));
+        var report = $"LLMCODES v{Updater.CurrentText} | style: {style} | DWGCODEPAGE: {AcadApp.GetSystemVariable("DWGCODEPAGE")}\n" +
+                     $"text: {text}\ncodes: {(codes.Length > 0 ? codes : "(không có ký tự ngoài ASCII)")}";
+        doc.Editor.WriteMessage("\n" + report.Replace("\n", "\n  "));
+        try
+        {
+            System.Windows.Forms.Clipboard.SetText(report);
+            doc.Editor.WriteMessage("\nĐã chép kết quả vào clipboard, dán (Ctrl+V) gửi lại để kiểm tra bảng mã.");
+        }
+        catch (System.Exception) { }
     }
 
     [CommandMethod("LLMGR", CommandFlags.Modal)]

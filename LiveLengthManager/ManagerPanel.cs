@@ -228,8 +228,6 @@ internal sealed class ManagerPanel : UserControl
         host.Controls.Add(contentHost, 0, 1);
         BuildSettings(settingsTab, host);
         Controls.Add(host);
-        _hostLayout = host;
-        BuildCompactStrip();
         var main = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6,
             Padding = new Padding(10, 8, 10, 8), BackColor = BackColor };
         main.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));   // drawing + tools
@@ -1073,8 +1071,6 @@ internal sealed class ManagerPanel : UserControl
     }
 
     private readonly Label _versionLabel = new();
-    private readonly Panel _compactStrip = new();
-    private Control? _hostLayout;
 
     private void ShowChangelog()
     {
@@ -1088,62 +1084,13 @@ internal sealed class ManagerPanel : UserControl
         }
     }
 
-    private void BuildCompactStrip()
-    {
-        _compactStrip.Dock = DockStyle.Fill;
-        _compactStrip.Visible = false;
-        _compactStrip.Cursor = Cursors.Hand;
-        var expand = new Button { Text = "»", Dock = DockStyle.Top, Height = 34, FlatStyle = FlatStyle.Flat,
-            Font = new Font("Segoe UI", 11f, FontStyle.Bold), Cursor = Cursors.Hand };
-        expand.FlatAppearance.BorderSize = 0;
-        _tips.SetToolTip(expand, "Mở rộng bảng LiveLength");
-        expand.Click += (_, _) => PaletteHost.Collapsed = false;
-        _compactStrip.Controls.Add(expand);
-        _compactStrip.Click += (_, _) => PaletteHost.Collapsed = false;
-        _tips.SetToolTip(_compactStrip, "Bấm để mở rộng bảng LiveLength. L= vẫn tự cập nhật.");
-        _compactStrip.Paint += (_, e) =>
-        {
-            var fore = _darkTheme ? Color.FromArgb(205, 214, 222) : Color.FromArgb(70, 81, 95);
-            var text = $"LiveLength  v{Updater.CurrentText}";
-            var missing = _all.Count(r => r.State == "Mất liên kết");
-            if (missing > 0) text += $"   ●{missing} mất nguồn";
-            var state = e.Graphics.Save();
-            e.Graphics.TranslateTransform(_compactStrip.Width / 2f + 7, 46);
-            e.Graphics.RotateTransform(90);
-            using var font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold);
-            using var brush = new SolidBrush(missing > 0 ? StateColor("Mất liên kết") : fore);
-            e.Graphics.DrawString(text, font, brush, 0, 0);
-            e.Graphics.Restore(state);
-        };
-        Controls.Add(_compactStrip);
-    }
-
-    internal void SetCompact(bool on)
-    {
-        if (_hostLayout == null) return;
-        FinishGridEditing();
-        _hostLayout.Visible = !on;
-        _compactStrip.Visible = on;
-        if (on)
-        {
-            _compactStrip.BackColor = _darkTheme ? Color.FromArgb(39, 45, 52) : Color.FromArgb(245, 248, 251);
-            foreach (Control c in _compactStrip.Controls)
-            {
-                c.BackColor = _compactStrip.BackColor;
-                c.ForeColor = _darkTheme ? Color.FromArgb(232, 238, 243) : Color.FromArgb(31, 48, 65);
-            }
-            _compactStrip.BringToFront();
-            _compactStrip.Invalidate();
-        }
-    }
-
     private void UpdateCollapseButton()
     {
         var collapsed = PaletteHost.Collapsed;
         _collapseButton.Text = collapsed ? "□" : "—";
         _tips.SetToolTip(_collapseButton, collapsed
             ? "Giữ bảng luôn mở"
-            : "Thu nhỏ bảng (dính cạnh: thu thành dải hẹp; nổi: cuộn lên thanh tiêu đề). L= vẫn tự cập nhật.");
+            : "Thu nhỏ bảng: bảng nổi thì cuộn lên thanh tiêu đề; bảng dính cạnh thì ẩn đi (gõ LLMGR để mở lại). L= vẫn tự cập nhật.");
     }
 
     // Update status lives in Settings; the popup (UpdateDialog) handles the prompt itself.
@@ -1225,7 +1172,6 @@ internal sealed class ManagerPanel : UserControl
 
     private void Render(Document doc, bool switched)
     {
-        if (_compactStrip.Visible) _compactStrip.Invalidate();
         var rows = _all;
         var gcRows = _gcRows;
         var oldGc = CurrentGc?.Handle;
