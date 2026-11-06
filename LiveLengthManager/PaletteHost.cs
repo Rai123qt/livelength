@@ -11,21 +11,71 @@ internal static class PaletteHost
     private static ManagerPanel? _panel;
     private static TrayItem? _tray;
     internal static bool IsVisible => _palette?.Visible == true;
-    private static string Title => "LiveLength Manager 2027 · v" + Updater.CurrentText;
+    private static string Title => "LiveLength Manager 2027  v" + Updater.CurrentText;
     internal static event Action? CollapsedChanged;
+    private const int CompactWidth = 44;
+    private static readonly Size ExpandedMinimum = new(430, 430);
+    private static bool _compact;
+    private static int _expandedWidth = 660;
 
-    /// <summary>Auto-hide: docked, the palette folds into a tab on the screen edge and opens on hover;
-    /// floating, it rolls up to its title bar. L= keeps updating either way.</summary>
+    // AutoRollUp only works for a floating palette set, and docked auto-hide (anchoring) cannot be
+    // set from .NET. Docked, "collapse" therefore narrows the palette to a thin strip instead.
     internal static bool Collapsed
     {
-        get { try { return _palette?.AutoRollUp == true; } catch (System.Exception) { return false; } }
+        get
+        {
+            if (_compact) return true;
+            try { return _palette?.AutoRollUp == true; } catch (System.Exception) { return false; }
+        }
         set
         {
-            if (_palette == null) return;
-            try { _palette.AutoRollUp = value; }
-            catch (System.Exception ex) { PluginLog.Write("auto-hide: " + ex.Message); }
+            if (_palette == null || _panel == null) return;
+            try
+            {
+                if (value) Collapse();
+                else Expand();
+            }
+            catch (System.Exception ex) { PluginLog.Write("collapse: " + ex.Message); }
             CollapsedChanged?.Invoke();
         }
+    }
+
+    private static bool Docked
+    {
+        get { try { return _palette!.Dock != DockSides.None; } catch (System.Exception) { return false; } }
+    }
+
+    private static void Collapse()
+    {
+        if (!Docked)
+        {
+            _palette!.AutoRollUp = true;
+            return;
+        }
+        _expandedWidth = Math.Max(ExpandedMinimum.Width, _palette!.Size.Width);
+        _compact = true;
+        _panel!.SetCompact(true);
+        _palette.MinimumSize = new Size(CompactWidth, 200);
+        _palette.Size = new Size(CompactWidth, _palette.Size.Height);
+        if (_palette.Size.Width > CompactWidth + 80)
+        {
+            // This AutoCAD build ignored the docked width: hide instead and say how to come back.
+            PluginLog.Write($"docked resize ignored (width {_palette.Size.Width}); hiding palette");
+            Expand();
+            _palette.Visible = false;
+            AcadApp.DocumentManager.MdiActiveDocument?.Editor.WriteMessage(
+                "\nLiveLength: đã ẩn bảng (L= vẫn tự cập nhật). Gõ LLMGR hoặc LLMTOGGLE để mở lại.");
+        }
+    }
+
+    private static void Expand()
+    {
+        _palette!.AutoRollUp = false;
+        if (!_compact) return;
+        _compact = false;
+        _panel!.SetCompact(false);
+        _palette.MinimumSize = ExpandedMinimum;
+        _palette.Size = new Size(_expandedWidth, _palette.Size.Height);
     }
 
     internal static void Show()
@@ -44,11 +94,13 @@ internal static class PaletteHost
             };
             _panel.Dock = System.Windows.Forms.DockStyle.Fill;
             _palette.StateChanged += (_, _) => { try { CollapsedChanged?.Invoke(); } catch (System.Exception) { } };
+            // Restoring the saved layout also restores the saved title; put the version back afterwards.
+            _palette.Load += (_, _) => SetTitle();
             _palette.Add("LiveLength", _panel);
         }
-        // AutoCAD restores a palette set's saved title by GUID; set it so the version is current.
-        try { _palette.Name = Title; } catch (System.Exception) { }
         _palette.Visible = true;
+        // AutoCAD restores the saved title (by GUID) on first show, so the version is set after it.
+        SetTitle();
         try { EnsureTray(); } catch (System.Exception ex) { PluginLog.Write("tray: " + ex.Message); }
         var doc = AcadApp.DocumentManager.MdiActiveDocument;
         if (doc != null)
@@ -60,6 +112,12 @@ internal static class PaletteHost
             }
             catch (System.Exception) { }
         }
+    }
+
+    private static void SetTitle()
+    {
+        try { if (_palette != null && _palette.Name != Title) _palette.Name = Title; }
+        catch (System.Exception ex) { PluginLog.Write("title: " + ex.Message); }
     }
 
     internal static void Toggle()
