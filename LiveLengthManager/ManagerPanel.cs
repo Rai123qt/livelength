@@ -1102,8 +1102,9 @@ internal sealed class ManagerPanel : UserControl
         try
         {
             var sb = new StringBuilder();
-            sb.AppendLine("sep=;");
-            sb.AppendLine("STT;Nội dung;Chiều dài 1;Chiều dài 2;Đơn vị;Trạng thái");
+            // UTF-16 + tab: Excel keeps Vietnamese text and splits columns on any locale.
+            // A "sep=" line would make Excel ignore the BOM and garble diacritics.
+            sb.AppendLine("STT\tNội dung\tChiều dài 1\tChiều dài 2\tĐơn vị\tTrạng thái");
             int i = 0;
             foreach (var r in _all.Where(r => r.Link?.IsGc != true))
             {
@@ -1115,9 +1116,9 @@ internal sealed class ManagerPanel : UserControl
                     r.Link?.Millimeters == true ? "mm" : "m",
                     r.State
                 };
-                sb.AppendLine(string.Join(";", cols.Select(Csv)));
+                sb.AppendLine(string.Join("\t", cols.Select(Csv)));
             }
-            System.IO.File.WriteAllText(dialog.FileName, sb.ToString(), new UTF8Encoding(true));
+            System.IO.File.WriteAllText(dialog.FileName, sb.ToString(), Encoding.Unicode);
             MessageBox.Show($"Đã xuất {i} ghi chú:\n{dialog.FileName}", "LiveLength");
         }
         catch (System.Exception ex) { MessageBox.Show(ex.Message, "Không thể xuất CSV"); }

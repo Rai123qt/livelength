@@ -15,6 +15,11 @@ internal static class LiveEngine
     private static readonly HashSet<Document> HistoryCommands = new();
     private static readonly HashSet<Document> SelectionDirty = new();
     private static readonly HashSet<Database> RedoProtected = new();
+    // Incremental sync: objects touched since the last idle pass, and an index of
+    // source handle -> linked notes rebuilt by every full scan.
+    private static readonly HashSet<Database> FullSync = new();
+    private static readonly Dictionary<Database, HashSet<ObjectId>> Changed = new();
+    private static readonly Dictionary<Database, Dictionary<string, HashSet<ObjectId>>> Dependents = new();
     private static bool _started;
     private static bool _syncing;
     private static bool _enabled = true;
@@ -48,6 +53,9 @@ internal static class LiveEngine
         HistoryCommands.Clear();
         SelectionDirty.Clear();
         RedoProtected.Clear();
+        FullSync.Clear();
+        Changed.Clear();
+        Dependents.Clear();
     }
 
     private static void Attach(Document doc)
@@ -59,12 +67,14 @@ internal static class LiveEngine
         DocumentNames[doc] = doc.Name;
         db.ObjectModified += DatabaseChanged;
         db.ObjectErased += DatabaseErased;
+        db.ObjectAppended += DatabaseAppended;
         doc.CommandWillStart += CommandStarting;
         doc.CommandEnded += CommandFinished;
         doc.CommandCancelled += CommandFinished;
         doc.CommandFailed += CommandFinished;
         doc.ImpliedSelectionChanged += ImpliedSelectionChanged;
         Dirty.Add(db);
+        FullSync.Add(db);
     }
 
     private static void Forget(Document doc)
@@ -75,6 +85,9 @@ internal static class LiveEngine
             Dirty.Remove(db);
             ArrowDirty.Remove(db);
             RedoProtected.Remove(db);
+            FullSync.Remove(db);
+            Changed.Remove(db);
+            Dependents.Remove(db);
         }
         HistoryCommands.Remove(doc);
         SelectionDirty.Remove(doc);
@@ -125,11 +138,15 @@ internal static class LiveEngine
             if (e.DBObject is MLeader leader)
             {
                 Dirty.Add(db);
+                Track(db, leader.ObjectId);
                 if (!ArrowDirty.TryGetValue(db, out var notes)) ArrowDirty[db] = notes = new HashSet<ObjectId>();
                 if (!leader.ObjectId.IsNull) notes.Add(leader.ObjectId);
             }
             else if (e.DBObject is Curve or Mline or AlignedDimension or RotatedDimension or DBText or MText)
+            {
                 Dirty.Add(db);
+                Track(db, e.DBObject.ObjectId);
+            }
         }
         catch (System.Exception) { }
     }
@@ -143,9 +160,35 @@ internal static class LiveEngine
                 if (DocumentDatabases.Any(pair => pair.Value == db && HistoryCommands.Contains(pair.Key))) return;
                 RedoProtected.Remove(db);
                 Dirty.Add(db);
+                Track(db, e.DBObject.ObjectId);
             }
         }
         catch (System.Exception) { }
+    }
+    private static void DatabaseAppended(object sender, ObjectEventArgs e)
+    {
+        // COPY/paste of a linked note must enter the index so later source edits reach it.
+        try
+        {
+            if (!_started || _syncing || sender is not Database db || !DocumentDatabases.Values.Contains(db) ||
+                e.DBObject is not (MLeader or MText or DBText)) return;
+            if (DocumentDatabases.Any(pair => pair.Value == db && HistoryCommands.Contains(pair.Key))) return;
+            Dirty.Add(db);
+            Track(db, e.DBObject.ObjectId);
+        }
+        catch (System.Exception) { }
+    }
+    private static void Track(Database db, ObjectId id)
+    {
+        if (id.IsNull) return;
+        if (!Changed.TryGetValue(db, out var ids)) Changed[db] = ids = new HashSet<ObjectId>();
+        ids.Add(id);
+    }
+    private static void InvalidateIndex(Database db)
+    {
+        // UNDO/REDO can restore notes or links without normal edit events.
+        Changed.Remove(db);
+        Dependents.Remove(db);
     }
     private static bool IsHistoryCommand(string? name)
     {
@@ -163,6 +206,7 @@ internal static class LiveEngine
             RedoProtected.Add(db);
             Dirty.Remove(db);
             ArrowDirty.Remove(db);
+            InvalidateIndex(db);
         }
         catch (System.Exception) { }
     }
@@ -177,6 +221,7 @@ internal static class LiveEngine
             {
                 RedoProtected.Add(db);
                 ArrowDirty.Remove(db);
+                InvalidateIndex(db);
                 // A palette scan here can invalidate AutoCAD's redo history.
                 // Leave the displayed snapshot until the next real edit or
                 // the user's explicit Quét lại action.
@@ -192,7 +237,9 @@ internal static class LiveEngine
 
     internal static void MarkDirty(Document doc)
     {
-        if (_started && DocumentDatabases.TryGetValue(doc, out var db)) Dirty.Add(db);
+        if (!_started || !DocumentDatabases.TryGetValue(doc, out var db)) return;
+        Dirty.Add(db);
+        FullSync.Add(db);
     }
     internal static void SetEnabled(bool value)
     {
@@ -233,13 +280,14 @@ internal static class LiveEngine
                 using (doc.LockDocument())
                 {
                     RefreshArrowSources(doc, db);
-                    Synchronize(doc);
+                    SynchronizePending(doc, db);
                 }
             }
             catch (System.Exception)
             {
                 // The document can be temporarily unavailable during editing / switching.
                 Dirty.Add(db);
+                FullSync.Add(db);
                 return;
             }
         }
@@ -263,78 +311,132 @@ internal static class LiveEngine
     internal static int Synchronize(Document doc)
     {
         if (_syncing) return 0;
+        var db = doc.Database;
         _syncing = true;
         var count = 0;
+        var index = new Dictionary<string, HashSet<ObjectId>>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            using var tr = doc.Database.TransactionManager.StartOpenCloseTransaction();
-            foreach (var id in EnumerateNotes(doc.Database, tr))
+            using var tr = db.TransactionManager.StartOpenCloseTransaction();
+            foreach (var id in EnumerateNotes(db, tr))
             {
-                try
-                {
-                    if (tr.GetObject(id, OpenMode.ForRead, false) is not Entity note) continue;
-                    var link = LengthData.ReadLink(note);
-                    if (link == null) continue;
-                    var current = LengthData.ReadText(note);
-                    if (current == null) continue;
-                    var canonical = LengthData.CollapseDuplicateLength(current);
-                    bool gcTemplateChanged = false;
-                    if (link.IsGc)
-                    {
-                        canonical = LengthData.RemoveGcCode(canonical, link.GcLabel);
-                        var cleaned = LengthData.RemoveGcCode(link.Template, link.GcLabel);
-                        gcTemplateChanged = cleaned != link.Template;
-                        link.Template = cleaned;
-                    }
-                    bool duplicateLength = canonical != current;
-                    if (!LengthData.HasLengthField(canonical))
-                    {
-                        note.UpgradeOpen();
-                        LengthData.MarkPlain(note);
-                        count++;
-                        continue;
-                    }
-                    var normalizedTemplate = LengthData.NormalizeSlots(
-                        LengthData.TemplateFor(link.Template, note is DBText, link.Millimeters),
-                        link.SecondarySourceHandle.Length > 0);
-                    bool unitsChanged = normalizedTemplate != link.Template;
-                    if (unitsChanged) link.Template = normalizedTemplate;
-                    var length = LengthData.GetLength(tr, doc.Database, link.SourceHandle);
-                    var secondLength = link.SecondarySourceHandle.Length > 0
-                        ? LengthData.GetLength(tr, doc.Database, link.SecondarySourceHandle) : null;
-                    // Do not write a placeholder after a source is erased. That
-                    // would create another undo record before the user can undo
-                    // the LINE/DIM deletion; the palette still shows missing source.
-                    if (!length.HasValue ||
-                        (link.SecondarySourceHandle.Length > 0 && !secondLength.HasValue)) continue;
-                    var wanted = LengthData.Render(link, length, secondLength);
-                    bool fixHeight = false;
-                    if (note is MLeader leader &&
-                        tr.GetObject(leader.MLeaderStyle, OpenMode.ForRead) is MLeaderStyle style &&
-                        (style.Name == "LLM-TNR" || style.Name == "LLM-VNROMANS"))
-                        fixHeight = Math.Abs(leader.TextHeight - 2.0) > 0.001;
-                    if (current == wanted && !fixHeight && !duplicateLength && !unitsChanged && !gcTemplateChanged) continue;
-                    // The note could also have been manually edited since the previous
-                    // update. Reconstruct its template from CURRENT text to preserve it.
-                    var reconstructed = LengthData.NormalizeSlots(
-                        LengthData.TemplateFor(canonical, note is DBText, link.Millimeters),
-                        link.SecondarySourceHandle.Length > 0);
-                    bool templateChanged = reconstructed != link.Template && reconstructed.Length <= 3000;
-                    if (templateChanged) link.Template = reconstructed;
-                    wanted = LengthData.Render(link, length, secondLength);
-                    if (current == wanted && !templateChanged && !fixHeight && !unitsChanged && !gcTemplateChanged) continue;
-                    note.UpgradeOpen();
-                    if (templateChanged || unitsChanged || gcTemplateChanged) LengthData.WriteLink(note, link);
-                    var textChanged = current != wanted && LengthData.WriteText(note, wanted);
-                    if (fixHeight) ((MLeader)note).TextHeight = 2.0;
-                    if (textChanged || fixHeight) count++;
-                }
+                try { count += SyncNote(tr, db, id, index); }
+                catch (System.Exception) { /* malformed one note must not stop others */ }
+            }
+            tr.Commit();
+            if (DocumentDatabases.Values.Contains(db))
+            {
+                Dependents[db] = index;
+                Changed.Remove(db);
+                FullSync.Remove(db);
+            }
+        }
+        finally { _syncing = false; }
+        return count;
+    }
+
+    // Updates only notes that were edited or depend on an edited source.
+    private static void SynchronizePending(Document doc, Database db)
+    {
+        if (FullSync.Contains(db) || !Dependents.TryGetValue(db, out var index))
+        {
+            Synchronize(doc);
+            return;
+        }
+        if (_syncing || !Changed.Remove(db, out var ids) || ids.Count == 0) return;
+        _syncing = true;
+        try
+        {
+            using var tr = db.TransactionManager.StartOpenCloseTransaction();
+            var targets = new HashSet<ObjectId>();
+            foreach (var id in ids)
+            {
+                // Handle is readable without opening, so erased sources still map to notes.
+                if (index.TryGetValue(id.Handle.ToString(), out var notes)) targets.UnionWith(notes);
+                if (id.IsErased) continue;
+                try { if (tr.GetObject(id, OpenMode.ForRead, false) is Entity e && LengthData.IsNote(e)) targets.Add(id); }
+                catch (System.Exception) { }
+            }
+            foreach (var id in targets)
+            {
+                if (id.IsNull || id.IsErased) continue;
+                try { SyncNote(tr, db, id, index); }
                 catch (System.Exception) { /* malformed one note must not stop others */ }
             }
             tr.Commit();
         }
         finally { _syncing = false; }
-        return count;
+    }
+
+    private static void AddDependent(Dictionary<string, HashSet<ObjectId>> index, string handle, ObjectId note)
+    {
+        if (string.IsNullOrWhiteSpace(handle) || handle == "0") return;
+        if (!index.TryGetValue(handle, out var notes)) index[handle] = notes = new HashSet<ObjectId>();
+        notes.Add(note);
+    }
+
+    private static int SyncNote(Transaction tr, Database db, ObjectId id, Dictionary<string, HashSet<ObjectId>>? index)
+    {
+        if (tr.GetObject(id, OpenMode.ForRead, false) is not Entity note) return 0;
+        var link = LengthData.ReadLink(note);
+        if (link == null) return 0;
+        if (index != null)
+        {
+            AddDependent(index, link.SourceHandle, id);
+            AddDependent(index, link.SecondarySourceHandle, id);
+        }
+        var current = LengthData.ReadText(note);
+        if (current == null) return 0;
+        var canonical = LengthData.CollapseDuplicateLength(current);
+        bool gcTemplateChanged = false;
+        if (link.IsGc)
+        {
+            canonical = LengthData.RemoveGcCode(canonical, link.GcLabel);
+            var cleaned = LengthData.RemoveGcCode(link.Template, link.GcLabel);
+            gcTemplateChanged = cleaned != link.Template;
+            link.Template = cleaned;
+        }
+        bool duplicateLength = canonical != current;
+        if (!LengthData.HasLengthField(canonical))
+        {
+            note.UpgradeOpen();
+            LengthData.MarkPlain(note);
+            return 1;
+        }
+        var normalizedTemplate = LengthData.NormalizeSlots(
+            LengthData.TemplateFor(link.Template, note is DBText, link.Millimeters),
+            link.SecondarySourceHandle.Length > 0);
+        bool unitsChanged = normalizedTemplate != link.Template;
+        if (unitsChanged) link.Template = normalizedTemplate;
+        var length = LengthData.GetLength(tr, db, link.SourceHandle);
+        var secondLength = link.SecondarySourceHandle.Length > 0
+            ? LengthData.GetLength(tr, db, link.SecondarySourceHandle) : null;
+        // Do not write a placeholder after a source is erased. That
+        // would create another undo record before the user can undo
+        // the LINE/DIM deletion; the palette still shows missing source.
+        if (!length.HasValue ||
+            (link.SecondarySourceHandle.Length > 0 && !secondLength.HasValue)) return 0;
+        var wanted = LengthData.Render(link, length, secondLength);
+        bool fixHeight = false;
+        if (note is MLeader leader &&
+            tr.GetObject(leader.MLeaderStyle, OpenMode.ForRead) is MLeaderStyle style &&
+            (style.Name == "LLM-TNR" || style.Name == "LLM-VNROMANS"))
+            fixHeight = Math.Abs(leader.TextHeight - 2.0) > 0.001;
+        if (current == wanted && !fixHeight && !duplicateLength && !unitsChanged && !gcTemplateChanged) return 0;
+        // The note could also have been manually edited since the previous
+        // update. Reconstruct its template from CURRENT text to preserve it.
+        var reconstructed = LengthData.NormalizeSlots(
+            LengthData.TemplateFor(canonical, note is DBText, link.Millimeters),
+            link.SecondarySourceHandle.Length > 0);
+        bool templateChanged = reconstructed != link.Template && reconstructed.Length <= 3000;
+        if (templateChanged) link.Template = reconstructed;
+        wanted = LengthData.Render(link, length, secondLength);
+        if (current == wanted && !templateChanged && !fixHeight && !unitsChanged && !gcTemplateChanged) return 0;
+        note.UpgradeOpen();
+        if (templateChanged || unitsChanged || gcTemplateChanged) LengthData.WriteLink(note, link);
+        var textChanged = current != wanted && LengthData.WriteText(note, wanted);
+        if (fixHeight) ((MLeader)note).TextHeight = 2.0;
+        return textChanged || fixHeight ? 1 : 0;
     }
 
     internal static List<ObjectId> EnumerateNotes(Database db, Transaction tr)
