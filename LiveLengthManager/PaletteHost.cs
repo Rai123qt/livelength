@@ -47,6 +47,15 @@ internal static class PaletteHost
         _panel.SetRows(doc, LiveEngine.GetRows(doc));
     }
 
+    internal static void Refresh(Document doc, PaletteDelta delta)
+    {
+        if (_panel == null || !IsVisible || delta.IsEmpty) return;
+        // Partial refresh reads only the affected notes / GC sources and patches grid rows.
+        if (delta.Full || !_panel.ApplyDelta(doc, delta.Notes, LiveEngine.GetRowsFor(doc, delta.Notes),
+                delta.GcSources, GcData.GetRowsFor(doc, delta.GcSources)))
+            Refresh(doc);
+    }
+
     internal static void SelectImplied(Document doc)
     {
         if (_panel == null || !IsVisible) return;

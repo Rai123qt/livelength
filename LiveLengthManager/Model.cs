@@ -44,3 +44,11 @@ internal sealed class NoteRow
     public string State = "";
     public LinkData? Link;
 }
+
+internal sealed class PaletteDelta
+{
+    public bool Full;
+    public readonly HashSet<string> Notes = new(StringComparer.OrdinalIgnoreCase);
+    public readonly HashSet<string> GcSources = new(StringComparer.OrdinalIgnoreCase);
+    public bool IsEmpty => !Full && Notes.Count == 0 && GcSources.Count == 0;
+}

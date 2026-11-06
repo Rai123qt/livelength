@@ -9,16 +9,20 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <AssemblyName>LiveLengthManager</AssemblyName>
-    <Version>3.9.8</Version>
-    <AssemblyVersion>3.9.8.0</AssemblyVersion>
-    <FileVersion>3.9.8.0</FileVersion>
+    <Version>3.9.9</Version>
+    <AssemblyVersion>3.9.9.0</AssemblyVersion>
+    <FileVersion>3.9.9.0</FileVersion>
     <AcadDir Condition="'$(AcadDir)' == ''">C:\Program Files\Autodesk\AutoCAD 2027</AcadDir>
   </PropertyGroup>
-  <ItemGroup>
+  <ItemGroup Condition="Exists('$(AcadDir)\AcMgd.dll')">
     <!-- These are supplied by AutoCAD 2027. Do not copy Autodesk DLLs into the bundle. -->
     <Reference Include="AcMgd"><HintPath>$(AcadDir)\AcMgd.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="AcDbMgd"><HintPath>$(AcadDir)\AcDbMgd.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="AcCoreMgd"><HintPath>$(AcadDir)\AcCoreMgd.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="AdWindows"><HintPath>$(AcadDir)\AdWindows.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <!-- Without a local AutoCAD 2027 (e.g. CI), compile against Autodesk's AutoCAD 2027 .NET API package. -->
+  <ItemGroup Condition="!Exists('$(AcadDir)\AcMgd.dll')">
+    <PackageReference Include="AutoCAD.NET" Version="26.0.0" ExcludeAssets="runtime" />
   </ItemGroup>
 </Project>

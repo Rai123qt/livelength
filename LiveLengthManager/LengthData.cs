@@ -24,7 +24,14 @@ internal static class LengthData
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     internal static bool IsNote(Entity e) => e is MText || e is MLeader ml && ml.ContentType == ContentType.MTextContent || e is DBText;
-    internal static bool IsSource(Entity e) => e is Line || e is Polyline || e is Polyline2d || e is Polyline3d || e is Mline || e is AlignedDimension || e is RotatedDimension;
+    internal static bool IsSource(Entity e) => e is Line or Polyline or Polyline2d or Polyline3d or Arc or Spline or Ellipse
+        or Mline or AlignedDimension or RotatedDimension;
+
+    internal static bool HasAppData(Entity e)
+    {
+        using var buffer = e.GetXDataForApplication(AppName);
+        return buffer != null;
+    }
 
     internal static string? ReadText(Entity e)
     {

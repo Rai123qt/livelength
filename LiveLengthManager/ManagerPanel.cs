@@ -149,6 +149,7 @@ internal sealed class ManagerPanel : UserControl
     private readonly List<Button> _navButtons = new();
     private Panel? _selectedPage;
     private List<NoteRow> _all = new();
+    private List<GcRow> _gcRows = new();
     private string _activeDoc = "";
     private bool _updatingGcGrid;
     private bool _updatingNoteGrid;
@@ -431,7 +432,7 @@ internal sealed class ManagerPanel : UserControl
             FlatStyle = FlatStyle.Flat };
         registerGc.FlatAppearance.BorderColor = Color.FromArgb(202, 213, 226);
         registerGc.Click += (_, _) => AcadApp.DocumentManager.MdiActiveDocument?.SendStringToExecute("LLMGCADD\n", true, false, false);
-        _tips.SetToolTip(registerGc, "Chọn DIM, LINE, PLINE hoặc MLINE; đặt mã và mô tả vị trí.");
+        _tips.SetToolTip(registerGc, "Chọn DIM, LINE, PLINE, ARC, SPLINE, ELLIPSE hoặc MLINE; đặt mã và mô tả vị trí.");
         gcActions.Controls.Add(registerGc, 0, 1);
         _gcLocateButton.Text = "Dò vị trí nguồn";
         _gcLocateButton.Dock = DockStyle.Fill;
@@ -528,10 +529,11 @@ internal sealed class ManagerPanel : UserControl
     private void BuildSettings(Panel page, Control host)
     {
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18),
-            ColumnCount = 1, RowCount = 4 };
+            ColumnCount = 1, RowCount = 5 };
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.Controls.Add(new Label { Text = "Giao diện palette", Dock = DockStyle.Fill,
             Font = new Font("Segoe UI Semibold", 12f, FontStyle.Bold) }, 0, 0);
@@ -553,10 +555,15 @@ internal sealed class ManagerPanel : UserControl
             catch { }
         };
         layout.Controls.Add(_themeSelector, 0, 2);
+        var followArrow = new CheckBox { Text = "Mũi tên MLeader bám theo nguồn khi nguồn đổi kích thước / di chuyển",
+            Dock = DockStyle.Fill, Checked = ArrowFollow.Enabled };
+        followArrow.CheckedChanged += (_, _) => ArrowFollow.Enabled = followArrow.Checked;
+        _tips.SetToolTip(followArrow, "Khi LINE/PLINE/ARC... bị kéo ngắn, kéo dài hoặc di chuyển, đầu mũi tên được đặt lại lên nguồn ở cùng vị trí tương đối.");
+        layout.Controls.Add(followArrow, 0, 3);
         layout.Controls.Add(new Label { Text = "Đơn vị mm/m được chọn riêng ở từng dòng ghi chú. " +
             "mm hiển thị số nguyên; m hiển thị tối đa 2 chữ số thập phân. " +
             "Nhấp vào ô Nội dung để sửa trực tiếp. Enter: lưu; Shift+Enter: xuống dòng.",
-            Dock = DockStyle.Fill, AutoSize = false }, 0, 3);
+            Dock = DockStyle.Fill, AutoSize = false }, 0, 4);
         page.Controls.Add(layout);
     }
 
@@ -715,25 +722,83 @@ internal sealed class ManagerPanel : UserControl
         bool switched = _activeDoc != doc.Name;
         _activeDoc = doc.Name;
         _all = rows;
+        _gcRows = GcData.GetRows(doc);
+        Render(doc, switched);
+    }
+
+    /// <summary>Merges re-read rows for the given handles. Returns false when a full refresh is needed.</summary>
+    internal bool ApplyDelta(Document doc, ICollection<string> noteHandles, List<NoteRow> notes,
+        ICollection<string> gcHandles, List<GcRow> gcRows)
+    {
+        if (IsDisposed || _activeDoc != doc.Name) return false;
+        if (noteHandles.Count > 0)
+        {
+            var replaced = new HashSet<string>(noteHandles, StringComparer.OrdinalIgnoreCase);
+            _all = LiveEngine.SortRows(_all.Where(r => !replaced.Contains(r.Handle)).Concat(notes));
+        }
+        if (gcHandles.Count > 0)
+        {
+            var replaced = new HashSet<string>(gcHandles, StringComparer.OrdinalIgnoreCase);
+            _gcRows = GcData.Sort(_gcRows.Where(r => !replaced.Contains(r.Handle)).Concat(gcRows));
+        }
+        Render(doc, false);
+        return true;
+    }
+
+    // Reuses the existing grid rows when the same items are shown in the same order, so a
+    // live refresh only rewrites changed cells and keeps scroll position, selection and an
+    // open editor. Returns false when the caller must rebuild the grid.
+    private static bool UpdateInPlace<T>(DataGridView grid, IReadOnlyList<T> items, Func<T, string> key,
+        Func<T, int, object[]> values, Action<DataGridViewRow, T> decorate) where T : class
+    {
+        if (grid.Rows.Count != items.Count) return false;
+        for (int i = 0; i < items.Count; i++)
+            if (grid.Rows[i].Tag is not T old || !key(old).Equals(key(items[i]), StringComparison.OrdinalIgnoreCase))
+                return false;
+        for (int i = 0; i < items.Count; i++)
+        {
+            var row = grid.Rows[i];
+            row.Tag = items[i];
+            if (grid.IsCurrentCellInEditMode && grid.CurrentCell?.RowIndex == i) continue;
+            var cellValues = values(items[i], i);
+            for (int c = 0; c < cellValues.Length && c < row.Cells.Count; c++)
+                if (!Equals(row.Cells[c].Value, cellValues[c])) row.Cells[c].Value = cellValues[c];
+            decorate(row, items[i]);
+        }
+        return true;
+    }
+
+    private static string GcDescription(GcRow item) =>
+        item.Description.Replace("\\P", Environment.NewLine, StringComparison.OrdinalIgnoreCase);
+
+    private void Render(Document doc, bool switched)
+    {
+        var rows = _all;
+        var gcRows = _gcRows;
         var oldGc = CurrentGc?.Handle;
-        var gcRows = GcData.GetRows(doc);
         _updatingGcGrid = true;
         try
         {
-            _gcGrid.CancelEdit();
-            _gcGrid.Rows.Clear();
-            foreach (var item in gcRows)
+            void DecorateGc(DataGridViewRow row, GcRow item) =>
+                row.Height = Math.Min(84, 31 + 18 * (GcDescription(item).Split('\n').Length - 1));
+            if (switched || !UpdateInPlace(_gcGrid, gcRows, r => r.Handle,
+                    (item, _) => new object[] { item.Name, GcDescription(item), FormatDisplay(item.LengthMeters, false) },
+                    DecorateGc))
             {
-                var visibleDescription = item.Description.Replace("\\P", Environment.NewLine, StringComparison.OrdinalIgnoreCase);
-                var index = _gcGrid.Rows.Add(item.Name, visibleDescription, FormatDisplay(item.LengthMeters, false));
-                _gcGrid.Rows[index].Tag = item;
-                _gcGrid.Rows[index].Height = Math.Min(84, 31 + 18 * (visibleDescription.Split('\n').Length - 1));
+                _gcGrid.CancelEdit();
+                _gcGrid.Rows.Clear();
+                foreach (var item in gcRows)
+                {
+                    var index = _gcGrid.Rows.Add(item.Name, GcDescription(item), FormatDisplay(item.LengthMeters, false));
+                    _gcGrid.Rows[index].Tag = item;
+                    DecorateGc(_gcGrid.Rows[index], item);
+                }
+                _gcGrid.ClearSelection();
+                var previous = _gcGrid.Rows.Cast<DataGridViewRow>().FirstOrDefault(r =>
+                    !switched && (r.Tag as GcRow)?.Handle == oldGc);
+                if (previous != null) previous.Selected = true;
+                else if (_gcGrid.Rows.Count > 0) _gcGrid.Rows[0].Selected = true;
             }
-            _gcGrid.ClearSelection();
-            var previous = _gcGrid.Rows.Cast<DataGridViewRow>().FirstOrDefault(r =>
-                !switched && (r.Tag as GcRow)?.Handle == oldGc);
-            if (previous != null) previous.Selected = true;
-            else if (_gcGrid.Rows.Count > 0) _gcGrid.Rows[0].Selected = true;
         }
         finally { _updatingGcGrid = false; }
         _gcSourceCount.Text = $"Nguồn GC · {gcRows.Count}   |   Sửa mô tả: Shift+Enter xuống dòng";
@@ -741,24 +806,34 @@ internal sealed class ManagerPanel : UserControl
         if (_gcEmpty.Visible) _gcEmpty.BringToFront();
         else _gcGrid.BringToFront();
         _updatingNoteGrid = true;
-        _gcNotesGrid.CancelEdit();
-        _gcNotesGrid.Rows.Clear();
         var gcNotes = rows.Where(r => r.Link?.IsGc == true).ToList();
-        int gcSeq = 0;
-        foreach (var note in gcNotes)
+        object[] GcNoteValues(NoteRow note, int i)
         {
             var code = note.Link?.GcLabel;
             if (string.IsNullOrWhiteSpace(code))
                 code = gcRows.FirstOrDefault(source => source.Handle.Equals(note.SourceHandle,
                     StringComparison.OrdinalIgnoreCase))?.Name ?? "—";
-            var index = _gcNotesGrid.Rows.Add(++gcSeq, code, note.Description,
-                FormatDisplay(note.LengthMeters, note.Link?.Millimeters == true),
-                note.State);
-            _gcNotesGrid.Rows[index].Tag = note;
-            _gcNotesGrid.Rows[index].Cells[2].ToolTipText = note.CurrentText.Replace("\\P", Environment.NewLine);
+            return new object[] { i + 1, code, note.Description,
+                FormatDisplay(note.LengthMeters, note.Link?.Millimeters == true), note.State };
         }
-        _gcNotesGrid.ClearSelection();
-        _updatingNoteGrid = false;
+        void DecorateGcNote(DataGridViewRow row, NoteRow note) =>
+            row.Cells[2].ToolTipText = note.CurrentText.Replace("\\P", Environment.NewLine);
+        try
+        {
+            if (switched || !UpdateInPlace(_gcNotesGrid, gcNotes, r => r.Handle, GcNoteValues, DecorateGcNote))
+            {
+                _gcNotesGrid.CancelEdit();
+                _gcNotesGrid.Rows.Clear();
+                for (int i = 0; i < gcNotes.Count; i++)
+                {
+                    var index = _gcNotesGrid.Rows.Add(GcNoteValues(gcNotes[i], i));
+                    _gcNotesGrid.Rows[index].Tag = gcNotes[i];
+                    DecorateGcNote(_gcNotesGrid.Rows[index], gcNotes[i]);
+                }
+                _gcNotesGrid.ClearSelection();
+            }
+        }
+        finally { _updatingNoteGrid = false; }
         _gcNoteCount.Text = $"MLeader GC · {gcNotes.Count}   |   Sửa mã/mô tả ở bảng nguồn phía trên";
         _gcNotesEmpty.Visible = gcNotes.Count == 0;
         if (_gcNotesEmpty.Visible) _gcNotesEmpty.BringToFront();
@@ -767,14 +842,17 @@ internal sealed class ManagerPanel : UserControl
         var old = _layer.SelectedItem?.ToString() ?? "Tất cả";
         var layers = rows.Where(r => r.Link?.IsGc != true).Select(r => r.Layer).Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
-        _layer.SelectedIndexChanged -= LayerChanged;
-        // Programmatically repopulating can fire SelectionChanged; its final filter
-        // run below restores the selected entity handle.
-        _layer.Items.Clear();
-        _layer.Items.Add("Tất cả");
-        foreach (var layer in layers) _layer.Items.Add(layer);
-        _layer.SelectedItem = !switched && layers.Contains(old) ? old : "Tất cả";
-        _layer.SelectedIndexChanged += LayerChanged;
+        if (switched || !_layer.Items.Cast<object>().Skip(1).Select(o => o.ToString()).SequenceEqual(layers))
+        {
+            _layer.SelectedIndexChanged -= LayerChanged;
+            // Programmatically repopulating can fire SelectionChanged; its final filter
+            // run below restores the selected entity handle.
+            _layer.Items.Clear();
+            _layer.Items.Add("Tất cả");
+            foreach (var layer in layers) _layer.Items.Add(layer);
+            _layer.SelectedItem = !switched && layers.Contains(old) ? old : "Tất cả";
+            _layer.SelectedIndexChanged += LayerChanged;
+        }
         _headline.Text = "Ghi chú chiều dài";
         _drawingName.Text = System.IO.Path.GetFileName(doc.Name);
         _tips.SetToolTip(_drawingName, doc.Name);
@@ -833,31 +911,39 @@ internal sealed class ManagerPanel : UserControl
             (layer == "Tất cả" || r.Layer.Equals(layer, StringComparison.OrdinalIgnoreCase))).ToList();
         _updatingNoteGrid = true;
         _grid.SuspendLayout();
+        object[] NoteValues(NoteRow r, int i) => new object[] { i + 1, r.Type, r.Description,
+            FormatNoteLengths(r),
+            r.State, r.Link == null ? "" : r.Link.Millimeters ? "mm" : "m", r.Layer, r.Layout,
+            r.HasPosition ? $"{r.Position.X:0.##}, {r.Position.Y:0.##}" : "-",
+            r.Handle, r.SourceHandle };
+        void DecorateNote(DataGridViewRow gridRow, NoteRow r)
+        {
+            gridRow.Cells[5].ReadOnly = r.Link == null;
+            var back = r.State == "Mất liên kết"
+                ? _darkTheme ? Color.FromArgb(74, 55, 57) : Color.FromArgb(255, 240, 236)
+                : Color.Empty;
+            if (gridRow.DefaultCellStyle.BackColor != back) gridRow.DefaultCellStyle.BackColor = back;
+        }
         try
         {
-            _grid.Rows.Clear();
-            int seq = 0;
-            foreach (var r in filtered)
+            if (clearSelection || !UpdateInPlace(_grid, filtered, r => r.Handle, NoteValues, DecorateNote))
             {
-                int index = _grid.Rows.Add(++seq, r.Type, r.Description,
-                    FormatNoteLengths(r),
-                    r.State, r.Link == null ? "" : r.Link.Millimeters ? "mm" : "m", r.Layer, r.Layout,
-                    r.HasPosition ? $"{r.Position.X:0.##}, {r.Position.Y:0.##}" : "-",
-                    r.Handle, r.SourceHandle);
-                var gridRow = _grid.Rows[index];
-                gridRow.Tag = r;
-                gridRow.Cells[5].ReadOnly = r.Link == null;
-                if (r.State == "Mất liên kết")
-                    gridRow.DefaultCellStyle.BackColor = _darkTheme ? Color.FromArgb(74, 55, 57) : Color.FromArgb(255, 240, 236);
+                _grid.Rows.Clear();
+                for (int i = 0; i < filtered.Count; i++)
+                {
+                    int index = _grid.Rows.Add(NoteValues(filtered[i], i));
+                    _grid.Rows[index].Tag = filtered[i];
+                    DecorateNote(_grid.Rows[index], filtered[i]);
+                }
+                _grid.ClearSelection();
+                if (selected != null)
+                    foreach (DataGridViewRow r in _grid.Rows)
+                        if ((r.Tag as NoteRow)?.Handle == selected)
+                        {
+                            r.Selected = true;
+                            break;
+                        }
             }
-            _grid.ClearSelection();
-            if (selected != null)
-                foreach (DataGridViewRow r in _grid.Rows)
-                    if ((r.Tag as NoteRow)?.Handle == selected)
-                    {
-                        r.Selected = true;
-                        break;
-                    }
         }
         finally { _grid.ResumeLayout(); _updatingNoteGrid = false; }
         int linked = lengthRows.Count(r => r.State == "Đã liên kết");
@@ -1058,7 +1144,7 @@ internal sealed class ManagerPanel : UserControl
     {
         if (CurrentGc is not { } selected)
         {
-            MessageBox.Show("Hãy đăng ký DIM/LINE/PLINE/MLINE và chọn mã GC trong danh sách.", "LiveLength");
+            MessageBox.Show("Hãy đăng ký DIM/LINE/PLINE/ARC/SPLINE/ELLIPSE/MLINE và chọn mã GC trong danh sách.", "LiveLength");
             return;
         }
         var doc = AcadApp.DocumentManager.MdiActiveDocument;
@@ -1102,8 +1188,9 @@ internal sealed class ManagerPanel : UserControl
         try
         {
             var sb = new StringBuilder();
-            sb.AppendLine("sep=;");
-            sb.AppendLine("STT;Nội dung;Chiều dài 1;Chiều dài 2;Đơn vị;Trạng thái");
+            // UTF-16 + tab: Excel keeps Vietnamese text and splits columns on any locale.
+            // A "sep=" line would make Excel ignore the BOM and garble diacritics.
+            sb.AppendLine("STT\tNội dung\tChiều dài 1\tChiều dài 2\tĐơn vị\tTrạng thái");
             int i = 0;
             foreach (var r in _all.Where(r => r.Link?.IsGc != true))
             {
@@ -1115,9 +1202,9 @@ internal sealed class ManagerPanel : UserControl
                     r.Link?.Millimeters == true ? "mm" : "m",
                     r.State
                 };
-                sb.AppendLine(string.Join(";", cols.Select(Csv)));
+                sb.AppendLine(string.Join("\t", cols.Select(Csv)));
             }
-            System.IO.File.WriteAllText(dialog.FileName, sb.ToString(), new UTF8Encoding(true));
+            System.IO.File.WriteAllText(dialog.FileName, sb.ToString(), Encoding.Unicode);
             MessageBox.Show($"Đã xuất {i} ghi chú:\n{dialog.FileName}", "LiveLength");
         }
         catch (System.Exception ex) { MessageBox.Show(ex.Message, "Không thể xuất CSV"); }
