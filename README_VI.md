@@ -2,7 +2,7 @@
 
 Mã nguồn plugin AutoCAD 2027 (.NET 10, C#) để tạo và quản lý MLeader có chiều dài tự cập nhật từ LINE, PLINE, MLINE hoặc DIM. Bảng quản lý có tab ghi chú chiều dài, tab giật cấp GC và tab cài đặt.
 
-Phiên bản mã nguồn: **3.9.7**. Chạy lệnh `LLMGR` trong AutoCAD để mở bảng quản lý.
+Phiên bản mã nguồn: **3.9.8**. Chạy lệnh `LLMGR` trong AutoCAD để mở bảng quản lý.
 
 ## Cấu trúc dự án
 
@@ -32,6 +32,8 @@ Không nạp hai bản LiveLength trong cùng một phiên AutoCAD. Hãy lưu b�
 - Ghi chú có hai chiều dài dùng hai vị trí `L=` và gắn nguồn thứ hai trong bảng quản lý.
 - Nội dung GC được quản lý từ nguồn DIM, LINE, PLINE hoặc MLINE đã đăng ký.
 - Ghi chú chỉ tự cập nhật trên máy có cài plugin; bản vẽ vẫn hiển thị giá trị đã lưu khi gửi cho người không cài plugin.
+- Khi chuyển MText có `L=` sang MLeader, plugin dò nguồn tại mũi tên; nếu chưa thấy, người dùng chọn LINE/PLINE/MLINE/DIM làm nguồn.
+- Khi chọn MLeader LiveLength trong bản vẽ, palette chuyển tới và đánh dấu dòng ghi chú tương ứng.
 
 ## Lưu trữ trên GitHub
 

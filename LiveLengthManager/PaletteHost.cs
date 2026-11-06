@@ -32,7 +32,11 @@ internal static class PaletteHost
         var doc = AcadApp.DocumentManager.MdiActiveDocument;
         if (doc != null)
         {
-            try { using (doc.LockDocument()) Refresh(doc); }
+            try
+            {
+                using (doc.LockDocument()) Refresh(doc);
+                SelectImplied(doc);
+            }
             catch (System.Exception) { }
         }
     }
@@ -41,6 +45,18 @@ internal static class PaletteHost
     {
         if (_panel == null || !IsVisible) return;
         _panel.SetRows(doc, LiveEngine.GetRows(doc));
+    }
+
+    internal static void SelectImplied(Document doc)
+    {
+        if (_panel == null || !IsVisible) return;
+        var selection = doc.Editor.SelectImplied();
+        if (selection.Status != Autodesk.AutoCAD.EditorInput.PromptStatus.OK) return;
+        foreach (var id in selection.Value.GetObjectIds())
+        {
+            if (!id.IsNull && !id.IsErased && _panel.SelectHandle(doc.Name, id.Handle.ToString()))
+                return;
+        }
     }
 
     internal static void ClearDocument(string name)

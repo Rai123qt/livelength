@@ -13,6 +13,7 @@ internal static class LiveEngine
     private static readonly HashSet<Database> Dirty = new();
     private static readonly Dictionary<Database, HashSet<ObjectId>> ArrowDirty = new();
     private static readonly HashSet<Document> HistoryCommands = new();
+    private static readonly HashSet<Document> SelectionDirty = new();
     private static readonly HashSet<Database> RedoProtected = new();
     private static bool _started;
     private static bool _syncing;
@@ -45,6 +46,7 @@ internal static class LiveEngine
         Dirty.Clear();
         ArrowDirty.Clear();
         HistoryCommands.Clear();
+        SelectionDirty.Clear();
         RedoProtected.Clear();
     }
 
@@ -61,6 +63,7 @@ internal static class LiveEngine
         doc.CommandEnded += CommandFinished;
         doc.CommandCancelled += CommandFinished;
         doc.CommandFailed += CommandFinished;
+        doc.ImpliedSelectionChanged += ImpliedSelectionChanged;
         Dirty.Add(db);
     }
 
@@ -74,6 +77,7 @@ internal static class LiveEngine
             RedoProtected.Remove(db);
         }
         HistoryCommands.Remove(doc);
+        SelectionDirty.Remove(doc);
         if (DocumentNames.Remove(doc, out var name)) _closedDocumentName = name;
         // The Document/Database are being destroyed by AutoCAD. Do not call
         // their native-backed event accessors while that teardown is underway.
@@ -90,7 +94,11 @@ internal static class LiveEngine
         // During CLOSE AutoCAD can activate a document whose native Database
         // is not ready (or is already being destroyed). Never read doc.Database
         // or subscribe here. DocumentCreated and Start attach stable documents.
-        try { if (DocumentDatabases.TryGetValue(doc, out var db)) Dirty.Add(db); }
+        try
+        {
+            if (DocumentDatabases.TryGetValue(doc, out var db)) Dirty.Add(db);
+            SelectionDirty.Add(doc);
+        }
         catch (System.Exception) { }
     }
     private static void DocumentClosing(object sender, DocumentCollectionEventArgs e)
@@ -98,6 +106,13 @@ internal static class LiveEngine
         if (!_started || e.Document is not { } doc) return;
         try { Forget(doc); }
         catch (System.Exception) { }
+    }
+
+    private static void ImpliedSelectionChanged(object? sender, EventArgs e)
+    {
+        // The callback may run during an AutoCAD selection operation. Read the
+        // PICKFIRST set later at idle, after the editor has finished changing it.
+        if (_started && sender is Document doc && Subscribed.Contains(doc)) SelectionDirty.Add(doc);
     }
 
     private static void DatabaseChanged(object sender, ObjectEventArgs e)
@@ -237,6 +252,11 @@ internal static class LiveEngine
                 using (doc.LockDocument()) PaletteHost.Refresh(doc);
             }
             catch (System.Exception) { /* palette will refresh on next idle */ }
+        }
+        if (PaletteHost.IsVisible && SelectionDirty.Remove(doc))
+        {
+            try { PaletteHost.SelectImplied(doc); }
+            catch (System.Exception) { /* Selection may disappear before idle. */ }
         }
     }
 

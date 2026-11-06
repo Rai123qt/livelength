@@ -104,7 +104,7 @@ public sealed class Commands
         var created = CreatePlacedMLeader(doc, leaderStyleId, textStyleId, layer,
             textHeight, textWidth, textColor, content, "\nChon diem mui ten MLeader: ");
         if (created.IsNull) return;
-        if (LengthData.HasLengthField(content)) LinkAtArrow(doc, created);
+        if (LengthData.HasLengthField(content)) LinkAtArrow(doc, created, promptIfMissing: true);
         else MarkPlainNote(doc, created);
         doc.Editor.WriteMessage("\nDa tao MLeader tu noi dung MText. MText goc van duoc giu lai.");
         try { PaletteHost.Refresh(doc); } catch (System.Exception) { }
@@ -630,7 +630,7 @@ public sealed class Commands
         if (!note.IsNull) LinkAtArrow(doc, note);
     }
 
-    private static void LinkAtArrow(Document doc, ObjectId note)
+    private static void LinkAtArrow(Document doc, ObjectId note, bool promptIfMissing = false)
     {
         using (var tr = doc.Database.TransactionManager.StartTransaction())
         {
@@ -648,6 +648,11 @@ public sealed class Commands
         {
             doc.Editor.WriteMessage("\nKhong doc duoc dau mui ten: " + ex.Message);
             return;
+        }
+        if (source.IsNull && promptIfMissing)
+        {
+            doc.Editor.WriteMessage("\nKhong tim thay nguon tai mui ten. Chon duong nguon de L= tu cap nhat.");
+            source = PickSource(doc.Editor);
         }
         if (source.IsNull)
         {

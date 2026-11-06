@@ -877,6 +877,35 @@ internal sealed class ManagerPanel : UserControl
     private NoteRow? CurrentRow => _grid.SelectedRows.Count > 0 ? _grid.SelectedRows[0].Tag as NoteRow : null;
     private GcRow? CurrentGc => _gcGrid.SelectedRows.Count > 0 ? _gcGrid.SelectedRows[0].Tag as GcRow : null;
 
+    internal bool SelectHandle(string documentName, string handle)
+    {
+        if (IsDisposed || !string.Equals(_activeDoc, documentName, StringComparison.OrdinalIgnoreCase)) return false;
+        var note = _all.FirstOrDefault(r => r.Handle.Equals(handle, StringComparison.OrdinalIgnoreCase));
+        if (note == null) return false;
+        bool isGc = note.Link?.IsGc == true;
+        int tabIndex = isGc ? 1 : 0;
+        if (_selectedPage != _navButtons[tabIndex].Tag) _navButtons[tabIndex].PerformClick();
+        if (!isGc)
+        {
+            _search.Text = "";
+            _status.SelectedIndex = 0;
+            _layer.SelectedIndex = 0;
+            FilterRows();
+        }
+        var grid = isGc ? _gcNotesGrid : _grid;
+        foreach (DataGridViewRow row in grid.Rows)
+        {
+            if ((row.Tag as NoteRow)?.Handle.Equals(handle, StringComparison.OrdinalIgnoreCase) != true) continue;
+            grid.ClearSelection();
+            row.Selected = true;
+            grid.CurrentCell = row.Cells[0];
+            if (row.Index >= 0) grid.FirstDisplayedScrollingRowIndex = row.Index;
+            if (isGc) UpdateGcDetails(); else UpdateDetails();
+            return true;
+        }
+        return false;
+    }
+
     private void UpdateGcDetails()
     {
         var row = CurrentGc;
