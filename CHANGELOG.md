@@ -2,6 +2,13 @@
 
 Mỗi bản phát hành có một mục `## [X.Y.Z]`. Khi tạo tag `vX.Y.Z`, workflow `release.yml` lấy đúng mục này làm ghi chú của GitHub Release, và nút **Xem thay đổi** trong plugin mở trang đó.
 
+## [3.13.1] - 2026-11-06
+
+### Sửa
+- Nút **—** khi bảng đang dính cạnh trái/phải: bảng thu thành dải hẹp (hiện số ghi chú mất nguồn), bấm **»** để mở lại. Khi bảng nổi vẫn cuộn lên thanh tiêu đề như trước.
+- Số phiên bản: hiện cạnh tên bản vẽ ở đầu tab Chiều dài; tiêu đề bảng được đặt lại sau khi AutoCAD nạp bố cục đã lưu.
+- **Xem thay đổi** luôn mở cửa sổ trong plugin (kể cả khi đang dùng bản mới nhất), không mở trang GitHub. **Kiểm tra ngay** cũng luôn hiện cửa sổ kết quả.
+
 ## [3.13.0] - 2026-11-06
 
 ### Thay đổi

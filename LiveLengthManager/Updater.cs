@@ -30,6 +30,8 @@ internal static class Updater
 
     internal static UpdateState State { get; private set; }
     internal static ReleaseInfo? Latest { get; private set; }
+    /// <summary>Newest published release, even when it is not newer than the running version.</summary>
+    internal static ReleaseInfo? Published { get; private set; }
     internal static string Error { get; private set; } = "";
     internal static event Action? Changed;
 
@@ -132,9 +134,16 @@ internal static class Updater
             System.IO.File.WriteAllText(LastCheckFile, tag);
         }
         catch { }
-        if (Normalize(version) <= Normalize(CurrentVersion) || dll == null) { Set(UpdateState.None); return; }
         var notes = root.TryGetProperty("body", out var body) ? body.GetString() ?? "" : "";
-        Latest = new ReleaseInfo(Normalize(version), root.GetProperty("html_url").GetString() ?? "", dll, sha, notes);
+        Published = new ReleaseInfo(Normalize(version), root.GetProperty("html_url").GetString() ?? "", dll ?? "", sha, notes);
+        if (Normalize(version) <= Normalize(CurrentVersion) || dll == null)
+        {
+            // A manual check still opens the popup to say the plugin is current and show its notes.
+            if (manual) Interlocked.Exchange(ref _prompt, 1);
+            Set(UpdateState.None);
+            return;
+        }
+        Latest = Published;
         var ready = System.IO.File.Exists(System.IO.Path.Combine(VersionDir(Latest.Version), DllAsset));
         // Automatic checks pop up once per new version unless the user skipped it; manual checks always do.
         if (manual || (!ready && !IsSkipped(Latest.Version))) Interlocked.Exchange(ref _prompt, 1);

@@ -26,7 +26,7 @@ internal sealed class UpdateDialog : Form
 
     internal static void Open()
     {
-        if (Updater.Latest == null) return;
+        if ((Updater.Latest ?? Updater.Published) == null) return;
         if (_open is { IsDisposed: false })
         {
             _open.Refresh(true);
@@ -97,7 +97,7 @@ internal sealed class UpdateDialog : Form
         _web.Anchor = AnchorStyles.Right;
         _web.LinkColor = accent;
         _web.ActiveLinkColor = accent;
-        _web.LinkClicked += (_, _) => OpenUrl(Updater.Latest?.PageUrl);
+        _web.LinkClicked += (_, _) => OpenUrl((Updater.Latest ?? Updater.Published)?.PageUrl);
         statusRow.Controls.Add(_web, 1, 0);
         layout.Controls.Add(statusRow, 0, 4);
 
@@ -157,10 +157,11 @@ internal sealed class UpdateDialog : Form
 
     private void Refresh(bool notes)
     {
-        var release = Updater.Latest;
+        var current = Updater.State == UpdateState.None || Updater.Latest == null;
+        var release = current ? Updater.Published ?? Updater.Latest : Updater.Latest;
         if (release == null) return;
         var latest = $"v{release.Version.Major}.{release.Version.Minor}.{release.Version.Build}";
-        _title.Text = Updater.State == UpdateState.Ready ? $"Đã tải {latest}" : $"Có bản mới {latest}";
+        _title.Text = current ? "Đang dùng bản mới nhất" : Updater.State == UpdateState.Ready ? $"Đã tải {latest}" : $"Có bản mới {latest}";
         _subtitle.Text = $"Đang dùng v{Updater.CurrentText}";
         if (notes)
         {
@@ -176,9 +177,9 @@ internal sealed class UpdateDialog : Form
             UpdateState.Downloading => ("Đang tải…", "Đang tải…", false, false, "Ẩn"),
             UpdateState.Ready => ("Đã tải xong. Đóng và mở lại AutoCAD để dùng bản mới.", "Đóng", true, false, "Đóng"),
             UpdateState.Failed => ("Không tải được: " + Updater.Error, "Thử lại", true, false, "Đóng"),
-            _ => ("", "Đóng", true, false, "Đóng")
+            _ => ($"Thay đổi của {latest}.", "Đóng", true, false, "Đóng")
         };
-        _later.Visible = Updater.State != UpdateState.Ready;
+        _later.Visible = Updater.State is not (UpdateState.Ready or UpdateState.None);
         _status.ForeColor = Updater.State == UpdateState.Failed ? Color.FromArgb(203, 64, 52) : _subtitle.ForeColor;
     }
 

@@ -228,6 +228,8 @@ internal sealed class ManagerPanel : UserControl
         host.Controls.Add(contentHost, 0, 1);
         BuildSettings(settingsTab, host);
         Controls.Add(host);
+        _hostLayout = host;
+        BuildCompactStrip();
         var main = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6,
             Padding = new Padding(10, 8, 10, 8), BackColor = BackColor };
         main.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));   // drawing + tools
@@ -238,8 +240,9 @@ internal sealed class ManagerPanel : UserControl
         main.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));   // row actions
         lengthTab.Controls.Add(main);
 
-        var header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Margin = Padding.Empty };
+        var header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, Margin = Padding.Empty };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 84));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88));
         _drawingName.Text = "Chưa mở bản vẽ";
@@ -248,10 +251,20 @@ internal sealed class ManagerPanel : UserControl
         _drawingName.TextAlign = ContentAlignment.MiddleLeft;
         _drawingName.Font = new Font("Segoe UI Semibold", 10.5f, FontStyle.Bold);
         header.Controls.Add(_drawingName, 0, 0);
+        // The palette title can be overridden by AutoCAD's saved layout, so the version is also shown here.
+        _versionLabel.Text = "v" + Updater.CurrentText;
+        _versionLabel.AutoSize = true;
+        _versionLabel.Anchor = AnchorStyles.Right;
+        _versionLabel.Margin = new Padding(6, 0, 2, 0);
+        _versionLabel.Font = new Font("Segoe UI", 8.5f);
+        _versionLabel.Cursor = Cursors.Hand;
+        _tips.SetToolTip(_versionLabel, "Phiên bản LiveLength · bấm để xem thay đổi / kiểm tra bản mới");
+        _versionLabel.Click += (_, _) => ShowChangelog();
+        header.Controls.Add(_versionLabel, 1, 0);
         var refresh = SmallButton("Quét lại");
         _tips.SetToolTip(refresh, "Đồng bộ và quét lại toàn bộ bản vẽ (F5).");
         refresh.Click += (_, _) => ForceRefresh();
-        header.Controls.Add(refresh, 1, 0);
+        header.Controls.Add(refresh, 2, 0);
         var tools = SmallButton("Công cụ ▼");
         var toolsMenu = new ContextMenuStrip { ShowImageMargin = false };
         toolsMenu.Items.Add("Dò nguồn theo MLeader", null, (_, _) => RunDocumentCommand("LLMFIND"));
@@ -261,7 +274,7 @@ internal sealed class ManagerPanel : UserControl
         toolsMenu.Opening += (_, _) => autoUpdate.Checked = LiveEngine.Enabled;
         tools.Click += (_, _) => toolsMenu.Show(tools, new Point(0, tools.Height));
         Disposed += (_, _) => toolsMenu.Dispose();
-        header.Controls.Add(tools, 2, 0);
+        header.Controls.Add(tools, 3, 0);
         main.Controls.Add(header, 0, 0);
 
         // Every create action stays one click: primary on its own row, the rest side by side.
@@ -629,8 +642,7 @@ internal sealed class ManagerPanel : UserControl
         _notesButton.Dock = DockStyle.Fill;
         _notesButton.FlatStyle = FlatStyle.Flat;
         _notesButton.Margin = new Padding(4, 3, 0, 3);
-        _notesButton.Enabled = false;
-        _notesButton.Click += (_, _) => UpdateDialog.Open();
+        _notesButton.Click += (_, _) => ShowChangelog();
         versionRow.Controls.Add(_notesButton, 2, 0);
         layout.Controls.Add(versionRow, 0, 6);
         layout.Controls.Add(new Label { Text = "Đơn vị mm/m được chọn riêng ở từng dòng ghi chú. " +
@@ -662,6 +674,7 @@ internal sealed class ManagerPanel : UserControl
             button.Invalidate();
         }
         _drawingName.ForeColor = foreground;
+        _versionLabel.ForeColor = _darkTheme ? Color.FromArgb(150, 162, 174) : Color.FromArgb(128, 138, 150);
         foreach (DataGridViewRow row in _grid.Rows)
             if (row.Tag is NoteRow note) row.DefaultCellStyle.BackColor = NoteBack(note);
         StyleChips();
@@ -1059,13 +1072,78 @@ internal sealed class ManagerPanel : UserControl
         HandleCreated += (_, _) => { UpdateStatus(); UpdateCollapseButton(); };
     }
 
+    private readonly Label _versionLabel = new();
+    private readonly Panel _compactStrip = new();
+    private Control? _hostLayout;
+
+    private void ShowChangelog()
+    {
+        if ((Updater.Latest ?? Updater.Published) != null) UpdateDialog.Open();
+        else
+        {
+            // Not checked yet this session: a manual check opens the popup when it finishes.
+            _manualCheck = true;
+            _updateStatus.Text = "Đang kiểm tra…";
+            Updater.CheckInBackground(true);
+        }
+    }
+
+    private void BuildCompactStrip()
+    {
+        _compactStrip.Dock = DockStyle.Fill;
+        _compactStrip.Visible = false;
+        _compactStrip.Cursor = Cursors.Hand;
+        var expand = new Button { Text = "»", Dock = DockStyle.Top, Height = 34, FlatStyle = FlatStyle.Flat,
+            Font = new Font("Segoe UI", 11f, FontStyle.Bold), Cursor = Cursors.Hand };
+        expand.FlatAppearance.BorderSize = 0;
+        _tips.SetToolTip(expand, "Mở rộng bảng LiveLength");
+        expand.Click += (_, _) => PaletteHost.Collapsed = false;
+        _compactStrip.Controls.Add(expand);
+        _compactStrip.Click += (_, _) => PaletteHost.Collapsed = false;
+        _tips.SetToolTip(_compactStrip, "Bấm để mở rộng bảng LiveLength. L= vẫn tự cập nhật.");
+        _compactStrip.Paint += (_, e) =>
+        {
+            var fore = _darkTheme ? Color.FromArgb(205, 214, 222) : Color.FromArgb(70, 81, 95);
+            var text = $"LiveLength  v{Updater.CurrentText}";
+            var missing = _all.Count(r => r.State == "Mất liên kết");
+            if (missing > 0) text += $"   ●{missing} mất nguồn";
+            var state = e.Graphics.Save();
+            e.Graphics.TranslateTransform(_compactStrip.Width / 2f + 7, 46);
+            e.Graphics.RotateTransform(90);
+            using var font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold);
+            using var brush = new SolidBrush(missing > 0 ? StateColor("Mất liên kết") : fore);
+            e.Graphics.DrawString(text, font, brush, 0, 0);
+            e.Graphics.Restore(state);
+        };
+        Controls.Add(_compactStrip);
+    }
+
+    internal void SetCompact(bool on)
+    {
+        if (_hostLayout == null) return;
+        FinishGridEditing();
+        _hostLayout.Visible = !on;
+        _compactStrip.Visible = on;
+        if (on)
+        {
+            _compactStrip.BackColor = _darkTheme ? Color.FromArgb(39, 45, 52) : Color.FromArgb(245, 248, 251);
+            foreach (Control c in _compactStrip.Controls)
+            {
+                c.BackColor = _compactStrip.BackColor;
+                c.ForeColor = _darkTheme ? Color.FromArgb(232, 238, 243) : Color.FromArgb(31, 48, 65);
+            }
+            _compactStrip.BringToFront();
+            _compactStrip.Invalidate();
+        }
+    }
+
     private void UpdateCollapseButton()
     {
         var collapsed = PaletteHost.Collapsed;
         _collapseButton.Text = collapsed ? "□" : "—";
         _tips.SetToolTip(_collapseButton, collapsed
             ? "Giữ bảng luôn mở"
-            : "Thu nhỏ: bảng thu vào cạnh màn hình, rê chuột vào để mở lại. L= vẫn tự cập nhật.");
+            : "Thu nhỏ bảng (dính cạnh: thu thành dải hẹp; nổi: cuộn lên thanh tiêu đề). L= vẫn tự cập nhật.");
     }
 
     // Update status lives in Settings; the popup (UpdateDialog) handles the prompt itself.
@@ -1083,7 +1161,6 @@ internal sealed class ManagerPanel : UserControl
             _ => _manualCheck ? $"v{Updater.CurrentText} là bản mới nhất." : $"Đang dùng v{Updater.CurrentText}"
         };
         _tips.SetToolTip(_updateStatus, _updateStatus.Text);
-        _notesButton.Enabled = Updater.Latest != null;
         if (_navButtons.Count > 2)
             _navButtons[2].Text = state is UpdateState.Available or UpdateState.Ready ? "Cài đặt  ●" : "Cài đặt";
     }
@@ -1148,6 +1225,7 @@ internal sealed class ManagerPanel : UserControl
 
     private void Render(Document doc, bool switched)
     {
+        if (_compactStrip.Visible) _compactStrip.Invalidate();
         var rows = _all;
         var gcRows = _gcRows;
         var oldGc = CurrentGc?.Handle;
