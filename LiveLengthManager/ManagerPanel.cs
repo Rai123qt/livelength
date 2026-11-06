@@ -107,6 +107,15 @@ internal sealed class ManagerPanel : UserControl
 
     private sealed class MultilineNoteGrid : DataGridView
     {
+        internal Action? EnterAction;
+
+        private bool HandleEnter(Keys keys)
+        {
+            if (EnterAction == null || keys != Keys.Enter || IsCurrentCellInEditMode || CurrentRow == null) return false;
+            EnterAction();
+            return true;
+        }
+
         private bool InsertLineBreak(Keys keys)
         {
             if ((keys & Keys.KeyCode) != Keys.Enter || (keys & Keys.Shift) == 0 ||
@@ -117,19 +126,16 @@ internal sealed class ManagerPanel : UserControl
         }
 
         protected override bool ProcessDialogKey(Keys keyData) =>
-            InsertLineBreak(keyData) || base.ProcessDialogKey(keyData);
+            InsertLineBreak(keyData) || HandleEnter(keyData) || base.ProcessDialogKey(keyData);
 
         protected override bool ProcessDataGridViewKey(KeyEventArgs e) =>
-            InsertLineBreak(e.KeyData) || base.ProcessDataGridViewKey(e);
+            InsertLineBreak(e.KeyData) || HandleEnter(e.KeyData) || base.ProcessDataGridViewKey(e);
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData) =>
             InsertLineBreak(keyData) || base.ProcessCmdKey(ref msg, keyData);
     }
 
-    private readonly Label _headline = new();
     private readonly Label _drawingName = new();
-    private readonly Label _totals = new();
-    private readonly Label _details = new();
     private readonly Label _gcDetails = new();
     private readonly Label _gcSourceCount = new();
     private readonly Label _gcNoteCount = new();
@@ -161,10 +167,17 @@ internal sealed class ManagerPanel : UserControl
         BackColor = Color.FromArgb(246, 248, 251);
         var host = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2,
             Margin = Padding.Empty, Padding = Padding.Empty };
-        host.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+        host.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         host.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        var navigation = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false,
-            Margin = Padding.Empty, Padding = Padding.Empty };
+        var navigation = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1,
+            Margin = Padding.Empty, Padding = new Padding(6, 4, 6, 0) };
+        for (int i = 0; i < 3; i++) navigation.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / 3));
+        // Thin divider under the tab strip.
+        navigation.Paint += (_, e) =>
+        {
+            using var pen = new Pen(_darkTheme ? Color.FromArgb(69, 78, 87) : Color.FromArgb(214, 222, 232));
+            e.Graphics.DrawLine(pen, 0, navigation.Height - 1, navigation.Width, navigation.Height - 1);
+        };
         var contentHost = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty };
         var lengthTab = new Panel { Dock = DockStyle.Fill, BackColor = BackColor };
         var gcTab = new Panel { Dock = DockStyle.Fill, BackColor = BackColor, Visible = false };
@@ -176,11 +189,18 @@ internal sealed class ManagerPanel : UserControl
         _selectedPage = lengthTab;
         void AddNavigation(string label, Panel page, int width)
         {
-            var button = new Button { Text = label, Width = width, Height = 30,
+            var button = new Button { Text = label, Dock = DockStyle.Fill,
                 Margin = new Padding(0, 0, 2, 0), FlatStyle = FlatStyle.Flat,
-                Tag = page,
-                Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold) };
+                Tag = page, Cursor = Cursors.Hand,
+                Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold) };
             button.FlatAppearance.BorderSize = 0;
+            // Selected tab: accent text with an underline instead of a filled block.
+            button.Paint += (_, e) =>
+            {
+                if (!ReferenceEquals(button.Tag, _selectedPage)) return;
+                using var brush = new SolidBrush(_darkTheme ? Color.FromArgb(110, 170, 210) : Color.FromArgb(35, 99, 150));
+                e.Graphics.FillRectangle(brush, 10, button.Height - 3, button.Width - 20, 3);
+            };
             button.Click += (_, _) =>
             {
                 FinishGridEditing();
@@ -190,7 +210,7 @@ internal sealed class ManagerPanel : UserControl
                 ApplyTheme(host);
             };
             _navButtons.Add(button);
-            navigation.Controls.Add(button);
+            navigation.Controls.Add(button, _navButtons.Count - 1, 0);
         }
         AddNavigation("Chiều dài", lengthTab, 88);
         AddNavigation("Giật cấp GC", gcTab, 106);
@@ -199,112 +219,117 @@ internal sealed class ManagerPanel : UserControl
         host.Controls.Add(contentHost, 0, 1);
         BuildSettings(settingsTab, host);
         Controls.Add(host);
-        var main = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 7,
-            Padding = new Padding(10, 10, 10, 10), BackColor = BackColor };
-        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
-        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 116));
-        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 67));
-        main.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
-        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 118));
+        var main = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6,
+            Padding = new Padding(10, 8, 10, 8), BackColor = BackColor };
+        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));   // drawing + tools
+        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 74));   // create actions
+        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));   // search + layer
+        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));   // quick status filters
+        main.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // grid
+        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));   // row actions
         lengthTab.Controls.Add(main);
 
-        _headline.Text = "Ghi chú chiều dài";
-        _headline.Font = new Font("Segoe UI Semibold", 13f, FontStyle.Bold);
-        _headline.Dock = DockStyle.Fill;
-        _headline.AutoEllipsis = true;
-        _headline.ForeColor = Color.FromArgb(27, 49, 77);
-        var titleGroup = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
-        titleGroup.RowStyles.Add(new RowStyle(SizeType.Absolute, 27));
-        titleGroup.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
+        var header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Margin = Padding.Empty };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 84));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88));
         _drawingName.Text = "Chưa mở bản vẽ";
         _drawingName.Dock = DockStyle.Fill;
         _drawingName.AutoEllipsis = true;
-        _drawingName.Font = new Font("Segoe UI", 8.5f);
-        titleGroup.Controls.Add(_headline, 0, 0);
-        titleGroup.Controls.Add(_drawingName, 0, 1);
-        main.Controls.Add(titleGroup, 0, 0);
+        _drawingName.TextAlign = ContentAlignment.MiddleLeft;
+        _drawingName.Font = new Font("Segoe UI Semibold", 10.5f, FontStyle.Bold);
+        header.Controls.Add(_drawingName, 0, 0);
+        var refresh = SmallButton("Quét lại");
+        _tips.SetToolTip(refresh, "Đồng bộ và quét lại toàn bộ bản vẽ (F5).");
+        refresh.Click += (_, _) => ForceRefresh();
+        header.Controls.Add(refresh, 1, 0);
+        var tools = SmallButton("Công cụ ▼");
+        var toolsMenu = new ContextMenuStrip { ShowImageMargin = false };
+        toolsMenu.Items.Add("Dò nguồn theo MLeader", null, (_, _) => RunDocumentCommand("LLMFIND"));
+        var autoUpdate = new ToolStripMenuItem("Tự động cập nhật L=") { CheckOnClick = true };
+        autoUpdate.CheckedChanged += (_, _) => LiveEngine.SetEnabled(autoUpdate.Checked);
+        toolsMenu.Items.Add(autoUpdate);
+        toolsMenu.Opening += (_, _) => autoUpdate.Checked = LiveEngine.Enabled;
+        tools.Click += (_, _) => toolsMenu.Show(tools, new Point(0, tools.Height));
+        Disposed += (_, _) => toolsMenu.Dispose();
+        header.Controls.Add(tools, 2, 0);
+        main.Controls.Add(header, 0, 0);
 
-        _totals.Dock = DockStyle.Fill;
-        _totals.ForeColor = Color.FromArgb(70, 81, 95);
-        _totals.Text = "Đang quét bản vẽ...";
-        main.Controls.Add(_totals, 0, 1);
-
-        var createActions = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
-        createActions.RowStyles.Add(new RowStyle(SizeType.Percent, 33));
-        createActions.RowStyles.Add(new RowStyle(SizeType.Percent, 33));
-        createActions.RowStyles.Add(new RowStyle(SizeType.Percent, 34));
+        // Every create action stays one click: primary on its own row, the rest side by side.
+        var createActions = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 2, Margin = Padding.Empty };
+        for (int i = 0; i < 3; i++) createActions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / 3));
+        createActions.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        createActions.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var createNew = new Button
         {
             Text = "＋  Tạo MLeader mới",
             Dock = DockStyle.Fill,
             Tag = "primary",
-            BackColor = Color.FromArgb(31, 93, 154),
-            ForeColor = Color.White,
+            Margin = new Padding(0, 2, 0, 3),
             FlatStyle = FlatStyle.Flat,
-            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold)
+            Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold)
         };
         createNew.FlatAppearance.BorderSize = 0;
-        _tips.SetToolTip(createNew, "Có L= trong nội dung: tự liên kết chiều dài tại mũi tên. Không có L=: ghi chú thường, không thêm chiều dài.");
-        createNew.Click += (_, _) => AcadApp.DocumentManager.MdiActiveDocument?.SendStringToExecute("LLMCREATE\n", true, false, false);
+        _tips.SetToolTip(createNew, "Có L= trong nội dung: tự liên kết chiều dài tại mũi tên. Không có L=: ghi chú thường.");
+        createNew.Click += (_, _) => RunDocumentCommand("LLMCREATE");
         createActions.Controls.Add(createNew, 0, 0);
-        var create = new Button
+        createActions.SetColumnSpan(createNew, 3);
+        void Secondary(string label, string tip, string command, int column)
         {
-            Text = "Gắn ghi chú đã có",
-            Dock = DockStyle.Fill,
-            Margin = new Padding(0, 2, 0, 6),
-            BackColor = Color.White,
-            ForeColor = Color.FromArgb(31, 67, 108),
-            FlatStyle = FlatStyle.Flat,
-            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold)
-        };
-        create.FlatAppearance.BorderColor = Color.FromArgb(202, 213, 226);
-        _tips.SetToolTip(create, "Chọn MLeader để tự nhận đường tại mũi tên; MText cần chọn nguồn.");
-        create.Click += (_, _) => RunNewLink();
-        createActions.Controls.Add(create, 0, 1);
-        var copy = new Button
-        {
-            Text = "Sao chép ghi chú từ mẫu",
-            Dock = DockStyle.Fill,
-            Margin = new Padding(0, 2, 0, 6),
-            BackColor = Color.White,
-            ForeColor = Color.FromArgb(31, 67, 108),
-            FlatStyle = FlatStyle.Flat,
-            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold)
-        };
-        copy.FlatAppearance.BorderColor = Color.FromArgb(202, 213, 226);
-        _tips.SetToolTip(copy, "Chọn MLeader LiveLength mẫu, rồi đặt mũi tên và vị trí ghi chú mới.");
-        copy.Click += (_, _) => AcadApp.DocumentManager.MdiActiveDocument?.SendStringToExecute("LLMCOPY\n", true, false, false);
-        createActions.Controls.Add(copy, 0, 2);
-        main.Controls.Add(createActions, 0, 2);
+            var button = new Button { Text = label, Dock = DockStyle.Fill, FlatStyle = FlatStyle.Flat,
+                Margin = new Padding(column == 0 ? 0 : 2, 1, column == 2 ? 0 : 2, 1), AutoEllipsis = true };
+            _tips.SetToolTip(button, tip);
+            button.Click += (_, _) => RunDocumentCommand(command);
+            createActions.Controls.Add(button, column, 1);
+        }
+        Secondary("Gắn ghi chú có sẵn", "Chọn MLeader để tự nhận đường tại mũi tên; MText cần chọn nguồn.", "LLMLINK", 0);
+        Secondary("Sao chép từ mẫu", "Chọn MLeader LiveLength mẫu, rồi đặt mũi tên và vị trí ghi chú mới.", "LLMCOPY", 1);
+        Secondary("MText → MLeader", "Tạo MLeader từ nội dung một MText; MText gốc được giữ lại.", "LLMMTEXT2LEADER", 2);
+        main.Controls.Add(createActions, 0, 1);
 
-        var filters = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 2 };
-        filters.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
-        filters.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 27));
-        filters.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 28));
-        filters.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
-        filters.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        filters.Controls.Add(NewFieldLabel("Tìm nội dung"), 0, 0);
-        filters.Controls.Add(NewFieldLabel("Trạng thái"), 1, 0);
-        filters.Controls.Add(NewFieldLabel("Layer"), 2, 0);
+        var filters = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+        filters.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        filters.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
         _search.Dock = DockStyle.Fill;
-        _search.PlaceholderText = "Ví dụ: CV 3x2.5, CAT6...";
-        _search.Margin = new Padding(0, 0, 6, 4);
+        _search.PlaceholderText = "Tìm nội dung hoặc handle… (Ctrl+F)";
+        _search.Margin = new Padding(0, 6, 6, 0);
         _search.TextChanged += (_, _) => FilterRows();
-        filters.Controls.Add(_search, 0, 1);
-        _status.Dock = DockStyle.Fill;
-        _status.Margin = new Padding(0, 0, 6, 4);
-        _status.Items.AddRange(new object[] { "Tất cả", "Đã liên kết", "Mất liên kết", "Ghi chú thường" });
-        _status.SelectedIndex = 0;
-        _status.SelectedIndexChanged += (_, _) => FilterRows();
-        filters.Controls.Add(_status, 1, 1);
+        _search.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode != Keys.Escape) return;
+            _search.Text = "";
+            e.SuppressKeyPress = true;
+        };
+        filters.Controls.Add(_search, 0, 0);
         _layer.Dock = DockStyle.Fill;
+        _layer.Margin = new Padding(0, 4, 0, 2);
         _layer.SelectedIndexChanged += LayerChanged;
         _layer.Items.Add("Tất cả");
         _layer.SelectedIndex = 0;
-        filters.Controls.Add(_layer, 2, 1);
-        main.Controls.Add(filters, 0, 3);
+        _tips.SetToolTip(_layer, "Lọc theo layer");
+        filters.Controls.Add(_layer, 1, 0);
+        main.Controls.Add(filters, 0, 2);
+
+        // Status filter state lives in _status; the chips are its visible control.
+        _status.Items.AddRange(new object[] { "Tất cả", "Đã liên kết", "Mất liên kết", "Ghi chú thường" });
+        _status.SelectedIndex = 0;
+        _status.SelectedIndexChanged += (_, _) => FilterRows();
+        _chips.Dock = DockStyle.Fill;
+        _chips.WrapContents = false;
+        _chips.Margin = Padding.Empty;
+        _chips.Padding = new Padding(0, 3, 0, 0);
+        for (int i = 0; i < 4; i++)
+        {
+            var index = i;
+            var chip = new Button { Tag = "chip", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                FlatStyle = FlatStyle.Flat, Height = 24, Margin = new Padding(0, 0, 6, 0), Padding = new Padding(4, 0, 4, 0),
+                Font = new Font("Segoe UI", 8.5f), Cursor = Cursors.Hand };
+            chip.Click += (_, _) => _status.SelectedIndex = _status.SelectedIndex == index ? 0 : index;
+            _chipButtons.Add(chip);
+            _chips.Controls.Add(chip);
+        }
+        UpdateChips(0, 0, 0, 0, 0);
+        main.Controls.Add(_chips, 0, 3);
 
         _grid.Dock = DockStyle.Fill;
         _grid.AllowUserToAddRows = false;
@@ -316,17 +341,14 @@ internal sealed class ManagerPanel : UserControl
         _grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
         _grid.RowHeadersVisible = false;
         _grid.BackgroundColor = Color.White;
-        _grid.ShowCellToolTips = false;
+        _grid.ShowCellToolTips = true;
         _grid.BorderStyle = BorderStyle.FixedSingle;
         _grid.EnableHeadersVisualStyles = false;
-        _grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(226, 232, 241);
-        _grid.ColumnHeadersHeight = 32;
-        _grid.RowTemplate.Height = 29;
         _grid.Columns.Add(NewCol("seq", "STT", 38));
         _grid.Columns.Add(NewCol("type", "Loại", 75));
         _grid.Columns.Add(NewCol("content", "Nội dung", 260));
-        _grid.Columns.Add(NewCol("len", "Dài", 85));
-        _grid.Columns.Add(NewCol("state", "Trạng thái", 105));
+        _grid.Columns.Add(NewCol("len", "Dài", 100));
+        _grid.Columns.Add(NewCol("state", "Trạng thái", 96));
         _grid.Columns.Add(new DataGridViewComboBoxColumn { Name = "unit", HeaderText = "Đơn vị",
             Width = 58, DataSource = new[] { "", "mm", "m" }, FlatStyle = FlatStyle.Flat,
             DisplayStyleForCurrentCellOnly = true });
@@ -337,12 +359,11 @@ internal sealed class ManagerPanel : UserControl
         _grid.Columns.Add(NewCol("source", "Nguồn", 90));
         _grid.Columns[2].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
         _grid.Columns[2].MinimumWidth = 100;
-        _grid.Columns[1].Visible = false;
-        _grid.Columns[3].Width = 100;
-        _grid.Columns[4].Width = 84;
+        _grid.Columns[3].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
+        _grid.Columns[0].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
         foreach (DataGridViewColumn column in _grid.Columns)
             column.ReadOnly = column.Name is not ("content" or "unit");
-        for (int i = 6; i < _grid.Columns.Count; i++) _grid.Columns[i].Visible = false;
+        LoadColumnVisibility();
         _grid.CellEndEdit += NoteCellEdited;
         _grid.CellBeginEdit += NoteCellBeginEdit;
         _grid.CurrentCellDirtyStateChanged += (_, _) =>
@@ -352,8 +373,22 @@ internal sealed class ManagerPanel : UserControl
         };
         _grid.EditingControlShowing += ConfigureNoteEditor;
         _grid.CellValueChanged += NoteCellValueChanged;
-        _grid.SelectionChanged += (_, _) => UpdateDetails();
-        _grid.CellDoubleClick += (_, e) => { if (e.ColumnIndex == 0) RunSelectionCommand("LLMZOOMNOTE"); };
+        _grid.CellPainting += PaintStateCell;
+        // Content is edited in place and unit is a dropdown; every other cell zooms.
+        _grid.CellDoubleClick += (_, e) =>
+        {
+            if (e.RowIndex >= 0 && e.ColumnIndex >= 0 &&
+                _grid.Columns[e.ColumnIndex].Name is not ("content" or "unit"))
+                RunSelectionCommand("LLMZOOMNOTE");
+        };
+        _grid.EnterAction = () => RunSelectionCommand("LLMZOOMNOTE");
+        _grid.CellMouseDown += ShowRowMenu;
+        _grid.ColumnHeaderMouseClick += (_, e) => { if (e.Button == MouseButtons.Right) ShowColumnMenu(); };
+        BuildRowMenu();
+        BuildColumnMenu();
+        _flashTimer.Interval = 1200;
+        _flashTimer.Tick += (_, _) => EndFlash();
+        Disposed += (_, _) => { _flashTimer.Dispose(); _rowMenu.Dispose(); };
         var lengthArea = new Panel { Dock = DockStyle.Fill };
         lengthArea.Controls.Add(_grid);
         _lengthEmpty.Dock = DockStyle.Fill;
@@ -365,35 +400,22 @@ internal sealed class ManagerPanel : UserControl
         lengthArea.Controls.Add(_lengthEmpty);
         main.Controls.Add(lengthArea, 0, 4);
 
-        _details.Dock = DockStyle.Fill;
-        _details.Padding = new Padding(5);
-        _details.Text = "Sửa Nội dung: Enter để lưu, Shift+Enter để xuống dòng.";
-        _details.BackColor = Color.White;
-        _details.BorderStyle = BorderStyle.FixedSingle;
-        main.Controls.Add(_details, 0, 5);
-
-        var buttons = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 6, RowCount = 3,
-            Padding = new Padding(0, 3, 0, 0) };
-        for (int i = 0; i < 6; i++) buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / 6));
-        for (int i = 0; i < 3; i++) buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / 3));
-        void Action(string label, EventHandler handler, int column, int row, int span)
+        var buttons = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1,
+            Padding = new Padding(0, 6, 0, 0), Margin = Padding.Empty };
+        for (int i = 0; i < 4; i++) buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25f));
+        void Action(string label, string tip, EventHandler handler, int column)
         {
-            var button = new Button { Text = label, Dock = DockStyle.Fill, Margin = new Padding(2, 2, 2, 3),
-                FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 8.5f) };
+            var button = new Button { Text = label, Dock = DockStyle.Fill, FlatStyle = FlatStyle.Flat, AutoEllipsis = true,
+                Margin = new Padding(column == 0 ? 0 : 2, 0, column == 3 ? 0 : 2, 0) };
+            _tips.SetToolTip(button, tip);
             button.Click += handler;
-            buttons.Controls.Add(button, column, row);
-            buttons.SetColumnSpan(button, span);
+            buttons.Controls.Add(button, column, 0);
         }
-        Action("Quét lại", (_, _) => ForceRefresh(), 0, 0, 2);
-        Action("Zoom ghi chú", (_, _) => RunSelectionCommand("LLMZOOMNOTE"), 2, 0, 2);
-        Action("Zoom nguồn", (_, _) => RunSelectionCommand("LLMZOOMSOURCE"), 4, 0, 2);
-        Action("Dò nguồn theo MLeader", (_, _) =>
-            AcadApp.DocumentManager.MdiActiveDocument?.SendStringToExecute("LLMFIND\n", true, false, false), 0, 1, 3);
-        Action("MText → MLeader", (_, _) =>
-            AcadApp.DocumentManager.MdiActiveDocument?.SendStringToExecute("LLMMTEXT2LEADER\n", true, false, false), 3, 1, 3);
-        Action("Gán chiều dài thứ 2", (_, _) => RunSelectionCommand("LLMSECOND"), 0, 2, 3);
-        Action("Xuất CSV", (_, _) => ExportCsv(), 3, 2, 3);
-        main.Controls.Add(buttons, 0, 6);
+        Action("Zoom ghi chú", "Zoom tới ghi chú đang chọn (Enter hoặc nhấp đúp).", (_, _) => RunSelectionCommand("LLMZOOMNOTE"), 0);
+        Action("Zoom nguồn", "Zoom tới đường nguồn của ghi chú đang chọn.", (_, _) => RunSelectionCommand("LLMZOOMSOURCE"), 1);
+        Action("Chiều dài 2", "Gán nguồn cho vị trí L= thứ hai của ghi chú đang chọn.", (_, _) => RunSelectionCommand("LLMSECOND"), 2);
+        Action("Xuất CSV", "Xuất danh sách ghi chú chiều dài để mở bằng Excel.", (_, _) => ExportCsv(), 3);
+        main.Controls.Add(buttons, 0, 5);
 
         var gcMain = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 7,
             Padding = new Padding(10), BackColor = BackColor };
@@ -561,8 +583,10 @@ internal sealed class ManagerPanel : UserControl
         _tips.SetToolTip(followArrow, "Khi LINE/PLINE/ARC... bị kéo ngắn, kéo dài hoặc di chuyển, đầu mũi tên được đặt lại lên nguồn ở cùng vị trí tương đối.");
         layout.Controls.Add(followArrow, 0, 3);
         layout.Controls.Add(new Label { Text = "Đơn vị mm/m được chọn riêng ở từng dòng ghi chú. " +
-            "mm hiển thị số nguyên; m hiển thị tối đa 2 chữ số thập phân. " +
-            "Nhấp vào ô Nội dung để sửa trực tiếp. Enter: lưu; Shift+Enter: xuống dòng.",
+            "mm hiển thị số nguyên; m hiển thị tối đa 2 chữ số thập phân." + Environment.NewLine + Environment.NewLine +
+            "Nhấp vào ô Nội dung để sửa trực tiếp. Enter: lưu; Shift+Enter: xuống dòng." + Environment.NewLine +
+            "Phím tắt: F5 quét lại · Ctrl+F tìm · Enter zoom ghi chú." + Environment.NewLine +
+            "Chuột phải vào dòng để có thêm thao tác; chuột phải vào tiêu đề cột để ẩn/hiện cột.",
             Dock = DockStyle.Fill, AutoSize = false }, 0, 4);
         page.Controls.Add(layout);
     }
@@ -576,20 +600,21 @@ internal sealed class ManagerPanel : UserControl
         BackColor = background;
         ThemeChildren(root, background, surface, foreground);
         _drawingName.ForeColor = _darkTheme ? Color.FromArgb(165, 181, 193) : Color.FromArgb(91, 108, 125);
-        _totals.ForeColor = _drawingName.ForeColor;
         foreach (var button in _navButtons)
         {
             var selected = ReferenceEquals(button.Tag, _selectedPage);
-            button.BackColor = selected ? accent : background;
-            button.ForeColor = selected ? Color.White : _drawingName.ForeColor;
+            button.BackColor = background;
+            button.ForeColor = selected ? (_darkTheme ? Color.FromArgb(150, 200, 235) : accent) : _drawingName.ForeColor;
             button.FlatStyle = FlatStyle.Flat;
             button.FlatAppearance.BorderSize = 0;
+            button.FlatAppearance.MouseOverBackColor = _darkTheme ? Color.FromArgb(48, 56, 64) : Color.FromArgb(234, 240, 247);
+            button.Invalidate();
         }
+        _drawingName.ForeColor = foreground;
         foreach (DataGridViewRow row in _grid.Rows)
-            if (row.Tag is NoteRow note)
-                row.DefaultCellStyle.BackColor = note.State == "Mất liên kết"
-                    ? (_darkTheme ? Color.FromArgb(74, 55, 57) : Color.FromArgb(255, 240, 236))
-                    : surface;
+            if (row.Tag is NoteRow note) row.DefaultCellStyle.BackColor = NoteBack(note);
+        StyleChips();
+        root.Invalidate(true);
     }
 
     private void ThemeChildren(Control control, Color background, Color surface, Color foreground)
@@ -716,6 +741,231 @@ internal sealed class ManagerPanel : UserControl
         grid.DefaultCellStyle.Padding = new Padding(3, 0, 3, 0);
     }
 
+    private readonly FlowLayoutPanel _chips = new();
+    private readonly List<Button> _chipButtons = new();
+    private readonly ContextMenuStrip _rowMenu = new() { ShowImageMargin = false };
+    private readonly System.Windows.Forms.Timer _flashTimer = new();
+    private readonly HashSet<string> _flash = new(StringComparer.OrdinalIgnoreCase);
+
+    private static Button SmallButton(string text) => new()
+    {
+        Text = text, Dock = DockStyle.Fill, FlatStyle = FlatStyle.Flat, Margin = new Padding(4, 3, 0, 3)
+    };
+
+    private static void RunDocumentCommand(string command) =>
+        AcadApp.DocumentManager.MdiActiveDocument?.SendStringToExecute(command + "\n", true, false, false);
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData == Keys.F5) { ForceRefresh(); return true; }
+        if (keyData == (Keys.Control | Keys.F))
+        {
+            if (_navButtons.Count > 0 && !ReferenceEquals(_selectedPage, _navButtons[0].Tag)) _navButtons[0].PerformClick();
+            _search.Focus();
+            _search.SelectAll();
+            return true;
+        }
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    private Color StateColor(string state) => state switch
+    {
+        "Đã liên kết" => _darkTheme ? Color.FromArgb(96, 196, 132) : Color.FromArgb(39, 140, 82),
+        "Mất liên kết" => _darkTheme ? Color.FromArgb(236, 120, 108) : Color.FromArgb(203, 64, 52),
+        _ => _darkTheme ? Color.FromArgb(150, 162, 174) : Color.FromArgb(128, 138, 150)
+    };
+
+    private static string ShortState(string state) => state switch
+    {
+        "Đã liên kết" => "Liên kết",
+        "Mất liên kết" => "Mất nguồn",
+        _ => "Thường"
+    };
+
+    private Color NoteBack(NoteRow note) => _flash.Contains(note.Handle)
+        ? (_darkTheme ? Color.FromArgb(88, 82, 50) : Color.FromArgb(255, 245, 205))
+        : note.State == "Mất liên kết"
+            ? (_darkTheme ? Color.FromArgb(74, 55, 57) : Color.FromArgb(255, 240, 236))
+            : Color.Empty;
+
+    private void PaintStateCell(object? sender, DataGridViewCellPaintingEventArgs e)
+    {
+        if (e.RowIndex < 0 || e.ColumnIndex < 0 || _grid.Columns[e.ColumnIndex].Name != "state" ||
+            _grid.Rows[e.RowIndex].Tag is not NoteRow note || e.Graphics is not { } g || e.CellStyle is not { } style) return;
+        var selected = (e.State & DataGridViewElementStates.Selected) != 0;
+        e.PaintBackground(e.CellBounds, selected);
+        var size = 8;
+        var dot = new Rectangle(e.CellBounds.X + 8, e.CellBounds.Y + (e.CellBounds.Height - size) / 2, size, size);
+        var smoothing = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using (var brush = new SolidBrush(StateColor(note.State))) g.FillEllipse(brush, dot);
+        g.SmoothingMode = smoothing;
+        var text = new Rectangle(dot.Right + 6, e.CellBounds.Y, Math.Max(0, e.CellBounds.Right - dot.Right - 8), e.CellBounds.Height);
+        TextRenderer.DrawText(g, ShortState(note.State), style.Font, text,
+            selected ? style.SelectionForeColor : style.ForeColor,
+            TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
+        e.Handled = true;
+    }
+
+    private void UpdateChips(int all, int linked, int missing, int plain, int shown)
+    {
+        if (_chipButtons.Count < 4) return;
+        _chipButtons[0].Text = shown != all ? $"Tất cả {all} · đang hiện {shown}" : $"Tất cả {all}";
+        _chipButtons[1].Text = $"● {linked} liên kết";
+        _chipButtons[2].Text = $"● {missing} mất nguồn";
+        _chipButtons[3].Text = $"● {plain} thường";
+        StyleChips();
+    }
+
+    private void StyleChips()
+    {
+        var accent = _darkTheme ? Color.FromArgb(66, 116, 150) : Color.FromArgb(35, 99, 150);
+        var background = _darkTheme ? Color.FromArgb(39, 45, 52) : Color.FromArgb(245, 248, 251);
+        var border = _darkTheme ? Color.FromArgb(86, 98, 109) : Color.FromArgb(206, 216, 227);
+        var states = new[] { "", "Đã liên kết", "Mất liên kết", "Ghi chú thường" };
+        for (int i = 0; i < _chipButtons.Count; i++)
+        {
+            var chip = _chipButtons[i];
+            var active = _status.SelectedIndex == i;
+            chip.BackColor = active ? accent : background;
+            chip.ForeColor = active ? Color.White
+                : i == 0 ? (_darkTheme ? Color.FromArgb(205, 214, 222) : Color.FromArgb(70, 81, 95)) : StateColor(states[i]);
+            chip.FlatAppearance.BorderSize = 1;
+            chip.FlatAppearance.BorderColor = active ? accent : border;
+            chip.FlatAppearance.MouseOverBackColor = active ? accent
+                : (_darkTheme ? Color.FromArgb(55, 64, 73) : Color.FromArgb(233, 240, 247));
+        }
+    }
+
+    private void BuildRowMenu()
+    {
+        ToolStripMenuItem Item(string text, string keys, Action action)
+        {
+            var item = new ToolStripMenuItem(text) { ShortcutKeyDisplayString = keys };
+            item.Click += (_, _) => action();
+            _rowMenu.Items.Add(item);
+            return item;
+        }
+        Item("Zoom ghi chú", "Enter", () => RunSelectionCommand("LLMZOOMNOTE"));
+        var zoomSource = Item("Zoom nguồn", "", () => RunSelectionCommand("LLMZOOMSOURCE"));
+        _rowMenu.Items.Add(new ToolStripSeparator());
+        var relink = Item("Gắn lại nguồn", "", () => RunSelectionCommand("LLMRELINK"));
+        var second = Item("Gán chiều dài thứ 2", "", () => RunSelectionCommand("LLMSECOND"));
+        Item("Chép nội dung", "", () =>
+        {
+            if (CurrentRow is not { } row) return;
+            try { Clipboard.SetText(row.CurrentText.Replace("\\P", Environment.NewLine, StringComparison.OrdinalIgnoreCase)); }
+            catch (System.Exception) { }
+        });
+        _rowMenu.Items.Add(new ToolStripSeparator());
+        var unlink = Item("Hủy liên kết", "", () =>
+        {
+            if (MessageBox.Show("Hủy liên kết chiều dài của ghi chú này? Nội dung hiện tại được giữ nguyên.",
+                    "LiveLength", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                RunSelectionCommand("LLMUNLINK");
+        });
+        _rowMenu.Opening += (_, e) =>
+        {
+            var row = CurrentRow;
+            if (row == null) { e.Cancel = true; return; }
+            var linked = row.Link != null;
+            zoomSource.Enabled = linked && row.SourceHandle is { Length: > 0 } and not "0";
+            relink.Enabled = linked;
+            second.Enabled = linked;
+            unlink.Enabled = linked;
+        };
+    }
+
+    private void ShowRowMenu(object? sender, DataGridViewCellMouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Right || e.RowIndex < 0) return;
+        FinishGridEditing();
+        var row = _grid.Rows[e.RowIndex];
+        if (!row.Selected)
+        {
+            _grid.ClearSelection();
+            row.Selected = true;
+            var cell = row.Cells.Cast<DataGridViewCell>().FirstOrDefault(c => c.Visible);
+            if (cell != null) _grid.CurrentCell = cell;
+        }
+        _rowMenu.Show(Cursor.Position);
+    }
+
+    private static string ColumnFile => System.IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "LiveLengthManager2027", "columns.txt");
+
+    private static readonly string[] OptionalColumns = { "type", "unit", "layer", "layout", "xy", "handle", "source" };
+
+    private void LoadColumnVisibility()
+    {
+        var visible = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "unit" };
+        try
+        {
+            if (System.IO.File.Exists(ColumnFile))
+                visible = new HashSet<string>(System.IO.File.ReadAllText(ColumnFile)
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), StringComparer.OrdinalIgnoreCase);
+        }
+        catch { }
+        foreach (var name in OptionalColumns) _grid.Columns[name]!.Visible = visible.Contains(name);
+    }
+
+    private readonly ContextMenuStrip _columnMenu = new();
+
+    private void BuildColumnMenu()
+    {
+        foreach (var name in OptionalColumns)
+        {
+            var column = _grid.Columns[name]!;
+            var item = new ToolStripMenuItem(column.HeaderText) { CheckOnClick = true };
+            item.CheckedChanged += (_, _) =>
+            {
+                if (column.Visible == item.Checked) return;
+                column.Visible = item.Checked;
+                try
+                {
+                    System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(ColumnFile)!);
+                    System.IO.File.WriteAllText(ColumnFile, string.Join(",",
+                        OptionalColumns.Where(n => _grid.Columns[n]!.Visible)));
+                }
+                catch { }
+            };
+            _columnMenu.Items.Add(item);
+        }
+        _columnMenu.Opening += (_, _) =>
+        {
+            for (int i = 0; i < OptionalColumns.Length; i++)
+                ((ToolStripMenuItem)_columnMenu.Items[i]).Checked = _grid.Columns[OptionalColumns[i]]!.Visible;
+        };
+        Disposed += (_, _) => _columnMenu.Dispose();
+    }
+
+    private void ShowColumnMenu()
+    {
+        FinishGridEditing();
+        _columnMenu.Show(Cursor.Position);
+    }
+
+    private void StartFlash(DataGridViewRow row)
+    {
+        if (row.Tag is not NoteRow note) return;
+        _flash.Add(note.Handle);
+        row.DefaultCellStyle.BackColor = NoteBack(note);
+        _flashTimer.Stop();
+        _flashTimer.Start();
+    }
+
+    private void EndFlash()
+    {
+        _flashTimer.Stop();
+        if (_flash.Count == 0) return;
+        var handles = _flash.ToList();
+        _flash.Clear();
+        foreach (DataGridViewRow row in _grid.Rows)
+            if (row.Tag is NoteRow note && handles.Contains(note.Handle, StringComparer.OrdinalIgnoreCase))
+                row.DefaultCellStyle.BackColor = NoteBack(note);
+    }
+
     internal void SetRows(Document doc, List<NoteRow> rows)
     {
         if (IsDisposed) return;
@@ -749,7 +999,8 @@ internal sealed class ManagerPanel : UserControl
     // live refresh only rewrites changed cells and keeps scroll position, selection and an
     // open editor. Returns false when the caller must rebuild the grid.
     private static bool UpdateInPlace<T>(DataGridView grid, IReadOnlyList<T> items, Func<T, string> key,
-        Func<T, int, object[]> values, Action<DataGridViewRow, T> decorate) where T : class
+        Func<T, int, object[]> values, Action<DataGridViewRow, T> decorate,
+        Action<DataGridViewRow>? changed = null) where T : class
     {
         if (grid.Rows.Count != items.Count) return false;
         for (int i = 0; i < items.Count; i++)
@@ -761,9 +1012,11 @@ internal sealed class ManagerPanel : UserControl
             row.Tag = items[i];
             if (grid.IsCurrentCellInEditMode && grid.CurrentCell?.RowIndex == i) continue;
             var cellValues = values(items[i], i);
+            var any = false;
             for (int c = 0; c < cellValues.Length && c < row.Cells.Count; c++)
-                if (!Equals(row.Cells[c].Value, cellValues[c])) row.Cells[c].Value = cellValues[c];
+                if (!Equals(row.Cells[c].Value, cellValues[c])) { row.Cells[c].Value = cellValues[c]; any = true; }
             decorate(row, items[i]);
+            if (any) changed?.Invoke(row);
         }
         return true;
     }
@@ -853,7 +1106,6 @@ internal sealed class ManagerPanel : UserControl
             _layer.SelectedItem = !switched && layers.Contains(old) ? old : "Tất cả";
             _layer.SelectedIndexChanged += LayerChanged;
         }
-        _headline.Text = "Ghi chú chiều dài";
         _drawingName.Text = System.IO.Path.GetFileName(doc.Name);
         _tips.SetToolTip(_drawingName, doc.Name);
         FilterRows(switched);
@@ -885,10 +1137,9 @@ internal sealed class ManagerPanel : UserControl
         _lengthEmpty.BringToFront();
         _grid.ClearSelection();
         _grid.Invalidate();
-        _totals.Text = "Không có bản vẽ đang mở.";
-        _headline.Text = "Ghi chú chiều dài";
+        _flash.Clear();
+        UpdateChips(0, 0, 0, 0, 0);
         _drawingName.Text = "Chưa mở bản vẽ";
-        _details.Text = "Mở bản vẽ để xem các ghi chú LiveLength.";
     }
 
     private void LayerChanged(object? sender, EventArgs e) => FilterRows();
@@ -919,14 +1170,15 @@ internal sealed class ManagerPanel : UserControl
         void DecorateNote(DataGridViewRow gridRow, NoteRow r)
         {
             gridRow.Cells[5].ReadOnly = r.Link == null;
-            var back = r.State == "Mất liên kết"
-                ? _darkTheme ? Color.FromArgb(74, 55, 57) : Color.FromArgb(255, 240, 236)
-                : Color.Empty;
+            var back = NoteBack(r);
             if (gridRow.DefaultCellStyle.BackColor != back) gridRow.DefaultCellStyle.BackColor = back;
+            gridRow.Cells[2].ToolTipText = r.CurrentText.Replace("\\P", Environment.NewLine, StringComparison.OrdinalIgnoreCase) +
+                Environment.NewLine + Environment.NewLine + "Nhấp để sửa · Enter: lưu · Shift+Enter: xuống dòng";
+            gridRow.Cells[4].ToolTipText = r.State;
         }
         try
         {
-            if (clearSelection || !UpdateInPlace(_grid, filtered, r => r.Handle, NoteValues, DecorateNote))
+            if (clearSelection || !UpdateInPlace(_grid, filtered, r => r.Handle, NoteValues, DecorateNote, StartFlash))
             {
                 _grid.Rows.Clear();
                 for (int i = 0; i < filtered.Count; i++)
@@ -949,15 +1201,13 @@ internal sealed class ManagerPanel : UserControl
         int linked = lengthRows.Count(r => r.State == "Đã liên kết");
         int missing = lengthRows.Count(r => r.State == "Mất liên kết");
         int plain = lengthRows.Count(r => r.State == "Ghi chú thường");
-        _totals.Text = $"{lengthRows.Count} ghi chú  |  {linked} đã liên kết  |  {missing} mất nguồn  |  {plain} thường" +
-            (filtered.Count != lengthRows.Count ? $"  |  {filtered.Count} đang hiện" : "");
+        UpdateChips(lengthRows.Count, linked, missing, plain, filtered.Count);
         _lengthEmpty.Text = lengthRows.Count == 0
             ? "CHƯA CÓ GHI CHÚ\nTạo MLeader mới để bắt đầu."
             : "Không tìm thấy ghi chú phù hợp bộ lọc.";
         _lengthEmpty.Visible = filtered.Count == 0;
         if (_lengthEmpty.Visible) _lengthEmpty.BringToFront();
         else _grid.BringToFront();
-        UpdateDetails();
     }
 
     private NoteRow? CurrentRow => _grid.SelectedRows.Count > 0 ? _grid.SelectedRows[0].Tag as NoteRow : null;
@@ -986,7 +1236,7 @@ internal sealed class ManagerPanel : UserControl
             row.Selected = true;
             grid.CurrentCell = row.Cells[0];
             if (row.Index >= 0) grid.FirstDisplayedScrollingRowIndex = row.Index;
-            if (isGc) UpdateGcDetails(); else UpdateDetails();
+            if (isGc) UpdateGcDetails();
             return true;
         }
         return false;
@@ -1090,13 +1340,6 @@ internal sealed class ManagerPanel : UserControl
         if (doc == null || _activeDoc != doc.Name) return;
         Commands.PendingNoteEdits.Enqueue((doc.Name, note.Handle, text, millimeters));
         doc.SendStringToExecute("LLMEDITNOTE\n", true, false, false);
-    }
-
-    private void UpdateDetails()
-    {
-        var r = CurrentRow;
-        _details.Text = r == null ? "Sửa Nội dung: Enter để lưu, Shift+Enter để xuống dòng." :
-            $"{r.Description}\nDài: {FormatNoteLengths(r)}  |  {r.State}\nEnter: lưu  ·  Shift+Enter: xuống dòng";
     }
 
     private void ForceRefresh()
